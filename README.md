@@ -41,7 +41,7 @@
 
 ```bash
 git clone <URL репозитория>
-cd Crypto
+cd cryptosafe-manager
 ```
 
 (или откройте каталог проекта в IDE.)
