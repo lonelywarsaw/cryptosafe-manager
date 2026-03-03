@@ -19,9 +19,11 @@ class SetupWizard(QDialog):
         layout.setSpacing(12)
         layout.addWidget(QLabel(t("label_create_pw")))
         self.pw1 = PasswordEntry(self)
+        self.pw1.entry.setMaxLength(16)
         layout.addWidget(self.pw1)
         layout.addWidget(QLabel(t("label_confirm_pw")))
         self.pw2 = PasswordEntry(self)
+        self.pw2.entry.setMaxLength(16)
         layout.addWidget(self.pw2)
         layout.addSpacing(16)
         layout.addWidget(QLabel(t("label_db_path")))
@@ -52,8 +54,8 @@ class SetupWizard(QDialog):
     def _finish(self):
         p1 = self.pw1.get()
         p2 = self.pw2.get()
-        if not p1 or len(p1) < 4:
-            QMessageBox.critical(self, "Ошибка", "Пароль должен быть не короче 4 символов.")
+        if not p1 or len(p1) < 4 or len(p1) > 16:
+            QMessageBox.critical(self, t("dlg_setup_title"), t("msg_pw_length"))
             return
         if p1 != p2:
             QMessageBox.critical(self, "Ошибка", "Пароли не совпадают.")
