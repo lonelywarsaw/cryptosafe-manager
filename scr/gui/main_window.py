@@ -92,11 +92,18 @@ class MainWindow(QMainWindow):
         self.db = Database(db_path)
         self.db.init_schema()
         import base64
+        import hashlib
+        key_check = hashlib.sha256(self._key).hexdigest()
         with self.db.cursor() as cur:
             cur.execute("DELETE FROM settings WHERE setting_key = ?", ("master_salt",))
             cur.execute(
                 "INSERT INTO settings (setting_key, setting_value, encrypted) VALUES (?, ?, 0)",
                 ("master_salt", base64.b64encode(salt).decode()),
+            )
+            cur.execute("DELETE FROM settings WHERE setting_key = ?", ("key_check",))
+            cur.execute(
+                "INSERT INTO settings (setting_key, setting_value, encrypted) VALUES (?, ?, 0)",
+                ("key_check", key_check.encode("utf-8")),
             )
         register_audit_handlers(self.db)
         self.config.load_from_db(self.db)
@@ -126,12 +133,21 @@ class MainWindow(QMainWindow):
             row = self.db.fetchone("SELECT setting_value FROM settings WHERE setting_key = ?", ("master_salt",))
             if row and row[0]:
                 import base64
+                import hashlib
                 try:
                     salt = base64.b64decode(row[0])
                     self._key = self.key_manager.derive_key(p, salt)
                 except Exception:
                     QMessageBox.critical(dlg, t("dlg_unlock_title"), t("msg_unlock_invalid"))
                     return
+                # Проверка пароля: сравниваем хеш ключа с сохранённым при настройке (для баз, созданных после добавления проверки)
+                key_check_stored = self.db.fetchone("SELECT setting_value FROM settings WHERE setting_key = ?", ("key_check",))
+                if key_check_stored and key_check_stored[0]:
+                    stored = key_check_stored[0].decode("utf-8") if isinstance(key_check_stored[0], bytes) else str(key_check_stored[0])
+                    if hashlib.sha256(self._key).hexdigest() != stored:
+                        self._key = None
+                        QMessageBox.critical(dlg, t("dlg_unlock_title"), t("msg_unlock_invalid"))
+                        return
             else:
                 QMessageBox.critical(dlg, t("dlg_unlock_title"), t("msg_unlock_no_salt"))
                 return

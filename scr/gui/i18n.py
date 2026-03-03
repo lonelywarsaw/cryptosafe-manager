@@ -62,6 +62,7 @@ STRINGS = {
         "msg_error_failed": "Операция не выполнена.",
         "msg_unlock_invalid": "Неверный пароль или данные.",
         "msg_unlock_no_salt": "Мастер-пароль не найден. Запустите первоначальную настройку.",
+        "msg_pw_length": "Пароль должен быть от 4 до 16 символов.",
         "about_text": "Менеджер паролей CryptoSafe\nВерсия 1\nЗащищённое хранилище паролей.",
     },
     "en": {
@@ -119,6 +120,7 @@ STRINGS = {
         "msg_error_failed": "Operation failed.",
         "msg_unlock_invalid": "Invalid password or data.",
         "msg_unlock_no_salt": "Master password not found. Run initial setup.",
+        "msg_pw_length": "Password must be 4 to 16 characters.",
         "about_text": "CryptoSafe Password Manager\nVersion 1\nSecure password vault.",
     },
 }
