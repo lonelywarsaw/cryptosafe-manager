@@ -1,82 +1,105 @@
+# Тут только работа с БД. Шифруют в другом месте, сюда приходит уже зашифрованное.
+
+import os
 import sqlite3
-import shutil
-import threading
-from pathlib import Path
-from contextlib import contextmanager
-from src.database.models import all_tables, schema_version
+import time
 
-class Database:
-    def __init__(self, path):
-        self._path = Path(path)
-        self._conn = None
-        self._lock = threading.RLock()
+from . import models
 
-    def _get_connection(self):
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self._path))
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+_db_path = None
 
-    @contextmanager
-    def cursor(self):
-        with self._lock:
-            conn = self._get_connection()
-            cur = conn.cursor()
-            try:
-                yield cur
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                cur.close()
+def set_db_path(path):
+    global _db_path
+    _db_path = path
 
-    def init_schema(self):
-        with self.cursor() as cur:
-            for sql in all_tables:
-                cur.executescript(sql)
-            cur.execute("PRAGMA user_version = " + str(schema_version))
+def _path():
+    if _db_path:
+        return _db_path
+    base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base, "vault.db")
 
-    def get_schema_version(self):
-        with self.cursor() as cur:
-            cur.execute("PRAGMA user_version")
-            row = cur.fetchone()
-        return row[0] if row else 0
+def get_connection():
+    return sqlite3.connect(_path())
 
-    def close(self):
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+def init_db():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("PRAGMA user_version")
+    version = cur.fetchone()[0]
+    if version == 0:
+        for sql in models.DDL:
+            cur.execute(sql)
+        cur.execute("PRAGMA user_version = %d" % models.SCHEMA_VERSION)
+        conn.commit()
+    conn.close()
 
-    def execute(self, sql, params=None):
-        with self._lock:
-            conn = self._get_connection()
-            cur = conn.cursor()
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-            conn.commit()
-            return cur
+def insert_vault_entry(title, username, encrypted_password, url=None, notes=None, tags=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    now = str(int(time.time()))
+    cur.execute(
+        """INSERT INTO vault_entries
+           (title, username, encrypted_password, url, notes, created_at, updated_at, tags)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (title, username, encrypted_password, url or "", notes or "", now, now, tags or ""),
+    )
+    conn.commit()
+    rowid = cur.lastrowid
+    conn.close()
+    return rowid
 
-    def fetchall(self, sql, params=None):
-        with self.cursor() as cur:
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-            return list(cur.fetchall())
+def get_all_vault_entries():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, title, username, encrypted_password, url, notes FROM vault_entries ORDER BY id"
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
 
-    def fetchone(self, sql, params=None):
-        with self.cursor() as cur:
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-            return cur.fetchone()
+def get_vault_entry(entry_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, title, username, encrypted_password, url, notes FROM vault_entries WHERE id=?",
+        (entry_id,),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return row
 
-def backup_database(db_path, backup_path):
-    shutil.copy2(db_path, backup_path)
+def update_vault_entry(entry_id, title, username, encrypted_password, url=None, notes=None, tags=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    now = str(int(time.time()))
+    cur.execute(
+        """UPDATE vault_entries SET title=?, username=?, encrypted_password=?, url=?, notes=?, updated_at=?, tags=? WHERE id=?""",
+        (title, username, encrypted_password, url or "", notes or "", now, tags or "", entry_id),
+    )
+    conn.commit()
+    conn.close()
 
-def restore_database(backup_path, db_path):
-    shutil.copy2(backup_path, db_path)
+def delete_vault_entry(entry_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM vault_entries WHERE id=?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+def insert_audit_log(action, entry_id=None, details=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    now = str(int(time.time()))
+    cur.execute(
+        "INSERT INTO audit_log (action, timestamp, entry_id, details, signature) VALUES (?, ?, ?, ?, ?)",
+        (action, now, entry_id, details or "", ""),
+    )
+    conn.commit()
+    conn.close()
+
+def backup():
+    pass
+
+def restore(path):
+    pass
