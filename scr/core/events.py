@@ -1,29 +1,56 @@
-entry_added = "entry_added"
-entry_updated = "entry_updated"
-entry_deleted = "entry_deleted"
-user_logged_in = "user_logged_in"
-user_logged_out = "user_logged_out"
-clipboard_copied = "clipboard_copied"
-clipboard_cleared = "clipboard_cleared"
+# Кто-то шлёт события, кто-то на них подписан. Можно вызвать сразу или положить в очередь.
 
-class EventBus:
-    def __init__(self):
-        self._handlers = {}
+import queue
+import threading
 
-    def subscribe(self, event, handler):
-        if event not in self._handlers:
-            self._handlers[event] = []
-        self._handlers[event].append(handler)
+EntryAdded = "EntryAdded"
+EntryUpdated = "EntryUpdated"
+EntryDeleted = "EntryDeleted"
+UserLoggedIn = "UserLoggedIn"
+UserLoggedOut = "UserLoggedOut"
+ClipboardCopied = "ClipboardCopied"
+ClipboardCleared = "ClipboardCleared"
 
-    def publish(self, event, payload=None):
-        if payload is None:
-            payload = {}
-        if event not in self._handlers:
-            return
-        for h in self._handlers[event]:
-            try:
-                h(event, payload)
-            except Exception:
-                pass
+_subscribers = {}
+_async_queue = queue.Queue()
+_worker_running = True
 
-event_bus = EventBus()
+
+def subscribe(event_type, callback):
+    if event_type not in _subscribers:
+        _subscribers[event_type] = []
+    _subscribers[event_type].append(callback)
+
+
+def publish(event_type, sync=True, **kwargs):
+    if sync:
+        _notify(event_type, kwargs)
+    else:
+        _async_queue.put((event_type, kwargs))
+
+
+def _notify(event_type, payload):
+    for cb in _subscribers.get(event_type, []):
+        try:
+            cb(**payload)
+        except Exception:
+            pass
+
+
+def _worker():
+    global _worker_running
+    while _worker_running:
+        try:
+            event_type, payload = _async_queue.get(timeout=0.2)
+            _notify(event_type, payload)
+        except queue.Empty:
+            continue
+
+
+_worker_thread = threading.Thread(target=_worker, daemon=True)
+_worker_thread.start()
+
+
+def shutdown():
+    global _worker_running
+    _worker_running = False

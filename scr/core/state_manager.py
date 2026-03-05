@@ -1,51 +1,65 @@
+# Тут храним: залогинен ли юзер, таймер буфера обмена, когда последний раз шевелился.
+
 import time
-from src.core.events import event_bus, user_logged_in, user_logged_out, clipboard_copied, clipboard_cleared
 
 class StateManager:
-    def __init__(self):
-        self._session_locked = True
-        self._clipboard_content = None
-        self._clipboard_timer = None
-        self._last_activity = 0.0
-        self._inactivity_timeout_seconds = 300.0
 
-    def is_locked(self):
-        return self._session_locked
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if hasattr(self, "_initialized") and self._initialized:
+            return
+        self._locked = True
+        self._clipboard_timeout_sec = 30
+        self._clipboard_seconds_left = 0
+        self._clipboard_has_content = False
+        self._last_activity_time = time.time()
+        self._initialized = True
 
     def set_locked(self, locked):
-        self._session_locked = locked
-        self._last_activity = time.monotonic() if not locked else 0.0
-        if locked:
-            event_bus.publish(user_logged_out, {})
-        else:
-            event_bus.publish(user_logged_in, {})
+        self._locked = bool(locked)
 
-    def get_clipboard_content(self):
-        return self._clipboard_content
+    def is_locked(self):
+        return self._locked
 
-    def set_clipboard_content(self, content, timeout_seconds=30):
-        self._clipboard_content = content
-        self._clipboard_timer = time.monotonic() + timeout_seconds if content else None
-        if content is not None:
-            event_bus.publish(clipboard_copied, {"timeout_seconds": timeout_seconds})
-        else:
-            event_bus.publish(clipboard_cleared, {})
+    def set_clipboard_timeout(self, seconds):
+        self._clipboard_timeout_sec = max(0, int(seconds))
 
-    def get_clipboard_timer_remaining(self):
-        if self._clipboard_timer is None:
-            return None
-        remaining = self._clipboard_timer - time.monotonic()
-        return max(0.0, remaining) if remaining > 0 else 0.0
+    def reset_clipboard_timer(self):
+        self._clipboard_seconds_left = self._clipboard_timeout_sec
+        self._clipboard_has_content = True
+
+    def tick_clipboard_timer(self):
+        if self._clipboard_seconds_left > 0:
+            self._clipboard_seconds_left -= 1
+        return self._clipboard_seconds_left
+
+    def get_clipboard_seconds_left(self):
+        return self._clipboard_seconds_left
+
+    def clipboard_has_content(self):
+        return self._clipboard_has_content
 
     def touch_activity(self):
-        self._last_activity = time.monotonic()
+        self._last_activity_time = time.time()
 
-    def set_inactivity_timeout_seconds(self, seconds):
-        self._inactivity_timeout_seconds = max(0, seconds)
+    def get_inactivity_seconds(self):
+        return int(time.time() - self._last_activity_time)
 
-    def is_inactivity_expired(self):
-        if self._session_locked:
-            return False
-        if self._inactivity_timeout_seconds <= 0:
-            return False
-        return (time.monotonic() - self._last_activity) >= self._inactivity_timeout_seconds
+    def get_state(self):
+        return {
+            "locked": self._locked,
+            "session": "locked" if self._locked else "unlocked",
+            "clipboard_seconds_left": self._clipboard_seconds_left,
+            "clipboard_timeout": self._clipboard_timeout_sec,
+            "inactivity_seconds": self.get_inactivity_seconds(),
+        }
+
+
+def get_state_manager():
+    return StateManager()
