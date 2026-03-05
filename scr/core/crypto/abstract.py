@@ -1,10 +1,10 @@
-from abc import ABC, abstractmethod
+# От этого класса наследуем все кто шифрует.
 
-class EncryptionService(ABC):
-    @abstractmethod
-    def encrypt(self, data, key):
-        pass
+class EncryptionService:
+    # Два метода — зашифровать и расшифровать, ключ передаётся снаружи.
 
-    @abstractmethod
-    def decrypt(self, ciphertext, key):
-        pass
+    def encrypt(self, data: bytes, key: bytes) -> bytes:
+        raise NotImplementedError
+
+    def decrypt(self, ciphertext: bytes, key: bytes) -> bytes:
+        raise NotImplementedError
