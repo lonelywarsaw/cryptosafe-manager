@@ -1,4 +1,4 @@
-# Проверяем что главное окно и мастер первого запуска открываются. Опционально — pyautogui.
+# Проверяем что главное окно и мастер первого запуска открываются.
 import unittest
 import sys
 
@@ -15,7 +15,7 @@ class TestMainWindowLaunches(unittest.TestCase):
         win.setWindowTitle("Test")
         self.assertIsNotNone(win)
         self.assertIsNotNone(win.menuBar())
-        # show() только если есть дисплей, в CI может не быть
+
         try:
             win.show()
             self.assertTrue(win.isVisible())
@@ -37,7 +37,7 @@ class TestMainWindowLaunches(unittest.TestCase):
 
 
 class TestGUIWithPyAutoGUI(unittest.TestCase):
-    # Окно показываем и проверяем что видно; если есть pyautogui — можно ещё проверить.
+    # Окно показываем и проверяем что видно.
 
     def setUp(self):
         try:
@@ -55,7 +55,7 @@ class TestGUIWithPyAutoGUI(unittest.TestCase):
         win.raise_()
         win.activateWindow()
         self.assertTrue(win.isVisible(), "Окно должно быть видимым")
-        # Дополнительно через pyautogui если есть
+
         if self.pyautogui is not None:
             try:
                 self.pyautogui.size()
