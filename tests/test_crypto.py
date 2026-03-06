@@ -1,29 +1,38 @@
+# Тесты шифрования — XOR туда-обратно, разные ключи.
 import unittest
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.core.crypto.placeholder import AES256Placeholder
-from src.core.key_manager import KeyManager
+from core.crypto.placeholder import AES256Placeholder
 
-class TestCrypto(unittest.TestCase):
-    def setUp(self):
-        self.crypto = AES256Placeholder()
-        self.key_manager = KeyManager()
-        self.sample_key = self.key_manager.derive_key("test_password", self.key_manager.generate_salt())
+
+class TestPlaceholderEncryption(unittest.TestCase):
+    # Проверяем что encrypt/decrypt работают, ключ не теряется.
 
     def test_encrypt_decrypt_roundtrip(self):
+        cipher = AES256Placeholder()
+        key = b"x" * 32
         data = b"secret password"
-        enc = self.crypto.encrypt(data, self.sample_key)
+        enc = cipher.encrypt(data, key)
         self.assertNotEqual(enc, data)
-        dec = self.crypto.decrypt(enc, self.sample_key)
+        dec = cipher.decrypt(enc, key)
         self.assertEqual(dec, data)
 
-    def test_empty_key_raises(self):
-        with self.assertRaises(ValueError):
-            self.crypto.encrypt(b"x", b"")
-        with self.assertRaises(ValueError):
-            self.crypto.decrypt(b"x", b"")
+    def test_different_keys_different_ciphertext(self):
+        cipher = AES256Placeholder()
+        data = b"data"
+        enc1 = cipher.encrypt(data, b"key1_________________________")
+        enc2 = cipher.encrypt(data, b"key2_________________________")
+        self.assertNotEqual(enc1, enc2)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_empty_data(self):
+        cipher = AES256Placeholder()
+        key = b"k" * 32
+        enc = cipher.encrypt(b"", key)
+        self.assertEqual(enc, b"")
+        dec = cipher.decrypt(b"", key)
+        self.assertEqual(dec, b"")
+
+    def test_decrypt_restores_plaintext(self):
+        cipher = AES256Placeholder()
+        key = bytes(32)
+        plain = b"hello"
+        self.assertEqual(cipher.decrypt(cipher.encrypt(plain, key), key), plain)

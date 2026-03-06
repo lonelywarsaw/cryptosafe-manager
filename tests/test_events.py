@@ -1,41 +1,63 @@
+# Тесты событий — подписка, вызов, синхронно и в очередь.
 import unittest
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.core.events import (
-    event_bus,
-    entry_added,
-    entry_updated,
-    entry_deleted,
-)
+from core import events
 
-class TestEventBus(unittest.TestCase):
-    def test_publish_subscribe(self):
+
+class TestEventSystemPublishing(unittest.TestCase):
+    # Публикация событий и вызов подписчиков.
+
+    def setUp(self):
+        events._subscribers.clear()
+
+    def tearDown(self):
+        events._subscribers.clear()
+
+    def test_subscribe_and_publish_sync_calls_callback(self):
         received = []
-        def handler(event, payload):
-            received.append((event, payload))
-        event_bus.subscribe(entry_added, handler)
-        event_bus.publish(entry_added, {"title": "Test"})
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0][0], entry_added)
-        self.assertEqual(received[0][1]["title"], "Test")
 
-    def test_multiple_handlers(self):
-        a, b = [], []
-        event_bus.subscribe(entry_added, lambda e, p: a.append(p))
-        event_bus.subscribe(entry_added, lambda e, p: b.append(p))
-        event_bus.publish(entry_added, {"id": 1})
+        def handler(**kwargs):
+            received.append(kwargs)
+
+        events.subscribe(events.EntryAdded, handler)
+        events.publish(events.EntryAdded, sync=True, entry_id=1)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0]["entry_id"], 1)
+
+    def test_publish_without_subscribers_does_not_fail(self):
+        events.publish(events.UserLoggedIn, sync=True)
+
+    def test_multiple_subscribers_all_called(self):
+        a = []
+        b = []
+
+        def h1(**kw):
+            a.append(kw)
+
+        def h2(**kw):
+            b.append(kw)
+
+        events.subscribe(events.EntryDeleted, h1)
+        events.subscribe(events.EntryDeleted, h2)
+        events.publish(events.EntryDeleted, sync=True, entry_id=5)
         self.assertEqual(len(a), 1)
         self.assertEqual(len(b), 1)
+        self.assertEqual(a[0]["entry_id"], 5)
+        self.assertEqual(b[0]["entry_id"], 5)
 
-    def test_different_events(self):
-        log = []
-        event_bus.subscribe(entry_added, lambda e, p: log.append(("add", p)))
-        event_bus.subscribe(entry_deleted, lambda e, p: log.append(("del", p)))
-        event_bus.publish(entry_added, {"id": 1})
-        event_bus.publish(entry_deleted, {"entry_id": 1})
-        self.assertEqual(log, [("add", {"id": 1}), ("del", {"entry_id": 1})])
+    def test_async_publish_puts_on_queue(self):
+        received = []
 
-if __name__ == "__main__":
-    unittest.main()
+        def handler(**kwargs):
+            received.append(kwargs)
+
+        events.subscribe(events.ClipboardCopied, handler)
+        events.publish(events.ClipboardCopied, sync=False, kind="password")
+        # Ждём пока воркер обработает из очереди
+        import time
+        for _ in range(50):
+            if received:
+                break
+            time.sleep(0.05)
+        self.assertGreaterEqual(len(received), 1)
+        self.assertEqual(received[0]["kind"], "password")
