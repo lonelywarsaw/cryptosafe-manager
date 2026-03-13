@@ -1,4 +1,4 @@
-# Поле для пароля, точки вместо букв, кнопка глаз — показать/скрыть.
+# виджет ввода пароля: по умолчанию отображаются точки, кнопка «глаз» переключает показ/скрытие текста
 
 from PyQt6.QtWidgets import QLineEdit, QWidget, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt
@@ -6,7 +6,6 @@ from PyQt6.QtGui import QPalette
 
 
 class PasswordEntry(QWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
@@ -35,6 +34,7 @@ class PasswordEntry(QWidget):
             self._btn.setPalette(app.palette())
 
     def _on_toggle(self, checked):
+        # при checked пароль показывается текстом, иначе снова скрывается точками
         if checked:
             self._line.setEchoMode(QLineEdit.EchoMode.Normal)
             self._btn.setText("🙈")
