@@ -34,13 +34,13 @@ def _get_hasher(time_cost=None, memory_cost=None, parallelism=None, hash_len=Non
 
 
 def hash_password_argon2(password: str) -> str:
-    # пароль хешируется Argon2id; строка содержит соль и параметры, её сохраняем в config (спринт 2)
+    # пароль хешируется Argon2id; строка содержит соль и параметры, её сохраняем в config
     hasher = _get_hasher()
     return hasher.hash(password)
 
 
 def verify_password_argon2(stored_hash: str, password: str) -> bool:
-    # проверка пароля против сохранённого Argon2-хеша; при ошибке — фиктивное сравнение чтобы не светить тайминг (спринт 2, HASH-3)
+    # проверка пароля против сохранённого Argon2-хеша; при ошибке — фиктивное сравнение чтобы не светить тайминг
     if not stored_hash or not password:
         secrets.compare_digest(b"x", b"x")
         return False
@@ -54,7 +54,7 @@ def verify_password_argon2(stored_hash: str, password: str) -> bool:
 
 
 def derive_key_pbkdf2(password: str, salt: bytes, iterations: int = None) -> bytes:
-    # из пароля и соли выводится ключ 32 байта (AES-256) через PBKDF2-HMAC-SHA256 (спринт 2)
+    # из пароля и соли выводится ключ 32 байта (AES-256) через PBKDF2-HMAC-SHA256
     from core import config
 
     iter_count = iterations or int(config.get("pbkdf2_iterations", PBKDF2_ITERATIONS))
