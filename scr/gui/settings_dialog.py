@@ -1,4 +1,5 @@
-# Окно настроек приложения.
+# окно настроек: вкладки безопасность (буфер, авто-блокировка), внешний вид (тема, язык), дополнительно
+# при открытии значения подставляются из config, при «применить» записываются обратно в config
 
 import sys
 import os
@@ -67,6 +68,7 @@ class SettingsDialog(QDialog):
         return w
 
     def _load(self):
+        # при открытии диалога в поля подставляются текущие значения из config
         self._clipboard_spin.setValue(int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30"))
         self._autolock_spin.setValue(int(config.get(config.AUTO_LOCK_MINUTES, "5") or "5"))
         theme = config.get(config.THEME, "system") or "system"
@@ -75,6 +77,7 @@ class SettingsDialog(QDialog):
         self._lang_combo.setCurrentIndex(0 if lang == "ru" else 1)
 
     def _apply(self):
+        # выбранные значения записываются в config, диалог закрывается
         config.set(config.CLIPBOARD_TIMEOUT, str(self._clipboard_spin.value()))
         config.set(config.AUTO_LOCK_MINUTES, str(self._autolock_spin.value()))
         theme_map = {0: "system", 1: "dark", 2: "light"}

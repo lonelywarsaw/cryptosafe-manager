@@ -8,7 +8,7 @@ from core import config
 STRINGS = {
     "ru": {
         "app_title": "CryptoSafe Manager",
-        "file": "Файл", "new": "Новый", "open": "Открыть", "backup": "Резервная копия", "exit": "Выход",
+        "file": "Файл", "new": "Новый", "open": "Открыть", "unlock": "Разблокировать", "backup": "Резервная копия", "exit": "Выход",
         "edit": "Правка", "add": "Добавить", "edit_": "Изменить", "delete": "Удалить", "copy_login": "Копировать логин", "copy_password": "Копировать пароль",
         "view": "Вид", "logs": "Журнал", "settings": "Настройки", "state_monitor": "Монитор состояния",
         "help": "Справка",
@@ -24,10 +24,12 @@ STRINGS = {
         "about": "О программе", "about_text": "CryptoSafe Manager\nЛокальный менеджер паролей.", "enter_master_password": "Введите мастер-пароль:", "master_password_hint": "Мастер-пароль задаётся при первой настройке (мастер первого запуска), не путать с паролями записей в таблице.", "login_title": "Вход", "password_required": "Введите мастер-пароль. Поле не может быть пустым.", "setup_first": "Сначала выполните первичную настройку (мастер-пароль ещё не задан).", "wrong_password": "Неверный мастер-пароль.", "error_generic": "Произошла ошибка. Повторите действие.",
         "password_too_long": "Пароль слишком длинный.", "passwords_dont_match": "Пароли не совпадают.",
         "state_session": "Сессия:", "state_clipboard": "Таймер буфера (с):", "state_inactivity": "Неактивность (с):",
+        "change_password_title": "Сменить пароль", "current_password": "Текущий пароль", "new_password": "Новый пароль", "change_password_ok": "Пароль успешно изменён.",
+        "session_locked_inactivity": "Сессия заблокирована из-за неактивности. Введите пароль в меню «Разблокировать».",
     },
     "en": {
         "app_title": "CryptoSafe Manager",
-        "file": "File", "new": "New", "open": "Open", "backup": "Backup", "exit": "Exit",
+        "file": "File", "new": "New", "open": "Open", "unlock": "Unlock", "backup": "Backup", "exit": "Exit",
         "edit": "Edit", "add": "Add", "edit_": "Edit", "delete": "Delete", "copy_login": "Copy login", "copy_password": "Copy password",
         "view": "View", "logs": "Logs", "settings": "Settings", "state_monitor": "State monitor",
         "help": "Help",
@@ -43,6 +45,8 @@ STRINGS = {
         "about": "About", "about_text": "CryptoSafe Manager\nLocal password manager.", "enter_master_password": "Enter master password:", "master_password_hint": "Master password is set during first-run setup only; it is not the same as entry passwords in the table.", "login_title": "Login", "password_required": "Enter master password. The field cannot be empty.", "setup_first": "Complete initial setup first (master password not set).", "wrong_password": "Incorrect master password.", "error_generic": "An error occurred. Please try again.",
         "password_too_long": "Password is too long.", "passwords_dont_match": "Passwords do not match.",
         "state_session": "Session:", "state_clipboard": "Clipboard timer (s):", "state_inactivity": "Inactivity (s):",
+        "change_password_title": "Change password", "current_password": "Current password", "new_password": "New password", "change_password_ok": "Password changed successfully.",
+        "session_locked_inactivity": "Session locked due to inactivity. Use menu Unlock to enter password.",
     },
 }
 

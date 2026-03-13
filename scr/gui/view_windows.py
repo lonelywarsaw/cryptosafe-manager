@@ -1,4 +1,5 @@
-# Окна из меню «Вид»: монитор состояния и журнал аудита.
+# окна из меню «вид»: монитор состояния (сессия, таймер буфера, неактивность) и заглушка журнала аудита
+# монитор обновляется по таймеру; журнал в спринте 5 заполнится записями из audit_log
 
 import sys
 import os
@@ -11,7 +12,6 @@ from .strings import t
 
 
 class StateMonitorWindow(QWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(t("state_monitor"))
@@ -46,7 +46,6 @@ class StateMonitorWindow(QWidget):
 
 
 class AuditLogViewer(QWidget):
-
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
