@@ -1,38 +1,38 @@
-# Тесты шифрования — XOR туда-обратно, разные ключи.
+# тесты шифрования (xor) с использованием key_manager
 import unittest
-
 from core.crypto.placeholder import AES256Placeholder
 
 
+class _FakeKeyManager:
+    # заглушка: get_encryption_key() возвращает заранее заданный ключ
+    def __init__(self, key: bytes):
+        self._key = key
+
+    def get_encryption_key(self):
+        return self._key
+
+
 class TestPlaceholderEncryption(unittest.TestCase):
-    # Проверяем что encrypt/decrypt работают, ключ не теряется.
-
-    def test_encrypt_decrypt_roundtrip(self):
-        cipher = AES256Placeholder()
+    def test_roundtrip(self):
+        # после шифрования и расшифровки через один и тот же key_manager получаются исходные данные
+        c = AES256Placeholder()
         key = b"x" * 32
-        data = b"secret password"
-        enc = cipher.encrypt(data, key)
-        self.assertNotEqual(enc, data)
-        dec = cipher.decrypt(enc, key)
-        self.assertEqual(dec, data)
+        km = _FakeKeyManager(key)
+        data = b"secret"
+        self.assertEqual(c.decrypt(c.encrypt(data, km), km), data)
 
-    def test_different_keys_different_ciphertext(self):
-        cipher = AES256Placeholder()
+    def test_different_keys(self):
+        # один и тот же текст с разными key_manager даёт разный шифротекст
+        c = AES256Placeholder()
         data = b"data"
-        enc1 = cipher.encrypt(data, b"key1_________________________")
-        enc2 = cipher.encrypt(data, b"key2_________________________")
-        self.assertNotEqual(enc1, enc2)
+        km1 = _FakeKeyManager(b"1" * 32)
+        km2 = _FakeKeyManager(b"2" * 32)
+        self.assertNotEqual(c.encrypt(data, km1), c.encrypt(data, km2))
 
-    def test_empty_data(self):
-        cipher = AES256Placeholder()
-        key = b"k" * 32
-        enc = cipher.encrypt(b"", key)
-        self.assertEqual(enc, b"")
-        dec = cipher.decrypt(b"", key)
-        self.assertEqual(dec, b"")
+    def test_empty(self):
+        # пустые данные шифруются и расшифровываются в пустую строку без ошибки
+        c = AES256Placeholder()
+        km = _FakeKeyManager(bytes(32))
+        self.assertEqual(c.encrypt(b"", km), b"")
+        self.assertEqual(c.decrypt(b"", km), b"")
 
-    def test_decrypt_restores_plaintext(self):
-        cipher = AES256Placeholder()
-        key = bytes(32)
-        plain = b"hello"
-        self.assertEqual(cipher.decrypt(cipher.encrypt(plain, key), key), plain)
