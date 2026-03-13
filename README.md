@@ -142,7 +142,7 @@ crypto/
 
 ## Установка и запуск
 
-1. Перейти в каталог проекта: `cd crypto`
+1. Перейти в каталог проекта: `cd cryptosafe-manager`
 2. Создать виртуальное окружение: `python -m venv .venv`
 3. Активировать: Windows — `.venv\Scripts\Activate.ps1`, Linux/macOS — `source .venv/bin/activate`
 4. Установить зависимости: `pip install -r requirements.txt`
