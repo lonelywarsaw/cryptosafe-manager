@@ -1,4 +1,5 @@
-# Отсюда всё стартует. Включаем тему, при первом запуске — мастер настройки, потом всегда спрашиваем пароль.
+# точка входа: создаётся приложение, применяется тема, инициализируются бд и аудит
+# при первом запуске показывается мастер настройки, затем окно ввода пароля, затем главное окно
 
 import sys
 import os
@@ -25,7 +26,8 @@ def main():
     database_db.init_db()
     register_audit()
 
-    if not config.get(config.DB_PATH) or not config.get(config.MASTER_PASSWORD_HASH):
+    # спринт 2: первый запуск — если нет пути к бд или нет auth_hash в key_store, показываем мастер настройки
+    if not config.get(config.DB_PATH) or not database_db.get_key_store("auth_hash"):
         wiz = SetupWizard()
         if not wiz.exec():
             return 0
@@ -37,13 +39,15 @@ def main():
     if not unlock.exec():
         return 0
 
-    events.publish(events.UserLoggedIn, sync=True)
+    # UserLoggedIn уже публикуется в unlock_dialog после успешного входа (спринт 2)
 
     win = MainWindow()
     win.set_locked(False)
     win.show()
 
     def on_quit():
+        from core.key_manager import clear_encryption_key
+        clear_encryption_key()
         events.publish(events.UserLoggedOut, sync=True)
         events.shutdown()
     app.aboutToQuit.connect(on_quit)
