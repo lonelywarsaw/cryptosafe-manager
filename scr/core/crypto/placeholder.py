@@ -1,17 +1,22 @@
-# XOR-шифрование. Ключ после использования зануляем в памяти.
+# временное шифрование (xor); ключ берётся через KeyManager и обнуляется после использования (спринт 1 и 2)
 
 import ctypes
 from .abstract import EncryptionService
 
+
 def _secure_zero(buf):
+    # байты в памяти обнуляются, чтобы ключ не оставался в ram после операции (спринт 2)
     if isinstance(buf, bytearray) and len(buf) > 0:
         arr = (ctypes.c_char * len(buf)).from_buffer(buf)
         ctypes.memset(ctypes.addressof(arr), 0, len(buf))
 
 
 class AES256Placeholder(EncryptionService):
-
-    def encrypt(self, data: bytes, key: bytes) -> bytes:
+    # xor каждого байта с ключом; ключ берётся из key_manager, затем копия ключа обнуляется (спринт 2)
+    def encrypt(self, data: bytes, key_manager) -> bytes:
+        key = key_manager.get_encryption_key()
+        if key is None:
+            raise ValueError("ключ не задан (хранилище заблокировано) (спринт 2)")
         key_arr = bytearray(key)
         try:
             out = bytearray(len(data))
@@ -21,5 +26,6 @@ class AES256Placeholder(EncryptionService):
         finally:
             _secure_zero(key_arr)
 
-    def decrypt(self, ciphertext: bytes, key: bytes) -> bytes:
-        return self.encrypt(ciphertext, key)
+    def decrypt(self, ciphertext: bytes, key_manager) -> bytes:
+        # xor симметричен — расшифровка та же операция, что и шифрование (спринт 2)
+        return self.encrypt(ciphertext, key_manager)
