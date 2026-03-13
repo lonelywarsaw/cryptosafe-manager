@@ -1,52 +1,20 @@
-# Проверяем что главное окно и мастер первого запуска открываются.
-import unittest
-import sys
+# тесты GUI (окно и диалог создаются, интерфейс отображается)
 
+import sys
+import unittest
 from PyQt6.QtWidgets import QApplication
 
-
-class TestMainWindowLaunches(unittest.TestCase):
-    # Просто создаём главное окно и смотрим что не падает.
-
-    def test_main_window_creates(self):
+class TestGUI(unittest.TestCase):
+    def test_main_window(self):
+        # главное окно создаётся, у него есть меню (значит базовый UI собран без ошибки)
         app = QApplication.instance() or QApplication(sys.argv)
         from gui.main_window import MainWindow
         win = MainWindow()
-        win.setWindowTitle("Test")
-        self.assertIsNotNone(win)
         self.assertIsNotNone(win.menuBar())
-
-        try:
-            win.show()
-            self.assertTrue(win.isVisible())
-        except Exception:
-            pass
         win.close()
 
-    def test_setup_wizard_dialog_creates(self):
-        app = QApplication.instance() or QApplication(sys.argv)
-        from gui.setup_wizard import SetupWizard
-        wiz = SetupWizard()
-        self.assertIsNotNone(wiz)
-        try:
-            wiz.show()
-            self.assertTrue(wiz.isVisible())
-        except Exception:
-            pass
-        wiz.reject()
-
-
-class TestGUIWithPyAutoGUI(unittest.TestCase):
-    # Окно показываем и проверяем что видно.
-
-    def setUp(self):
-        try:
-            import pyautogui
-            self.pyautogui = pyautogui
-        except ImportError:
-            self.pyautogui = None
-
-    def test_cryptosafe_window_appears_with_pyautogui(self):
+    def test_main_window_visible(self):
+        # окно показывается на экране; isVisible() возвращает True (проверка что интерфейс реально отображается)
         app = QApplication.instance() or QApplication(sys.argv)
         from gui.main_window import MainWindow
         win = MainWindow()
@@ -54,11 +22,33 @@ class TestGUIWithPyAutoGUI(unittest.TestCase):
         win.show()
         win.raise_()
         win.activateWindow()
-        self.assertTrue(win.isVisible(), "Окно должно быть видимым")
-
-        if self.pyautogui is not None:
-            try:
-                self.pyautogui.size()
-            except Exception:
-                pass
+        self.assertTrue(win.isVisible(), "окно должно быть видимым")
         win.close()
+
+    def test_main_window_pyautogui(self):
+        # проверка интерфейса через PyAutoGUI: окно показывается, обрабатываются события, pyautogui получает размер экрана
+        try:
+            import pyautogui
+        except ImportError:
+            self.skipTest("pyautogui не установлен")
+        app = QApplication.instance() or QApplication(sys.argv)
+        from gui.main_window import MainWindow
+        win = MainWindow()
+        win.setWindowTitle("CryptoSafe Manager")
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        for _ in range(5):
+            app.processEvents()
+        width, height = pyautogui.size()
+        self.assertGreater(width, 0)
+        self.assertGreater(height, 0)
+        win.close()
+
+    def test_setup_wizard(self):
+        # диалог первого запуска создаётся и закрывается без падения (проверка что форма открывается)
+        app = QApplication.instance() or QApplication(sys.argv)
+        from gui.setup_wizard import SetupWizard
+        wiz = SetupWizard()
+        self.assertIsNotNone(wiz)
+        wiz.reject()
