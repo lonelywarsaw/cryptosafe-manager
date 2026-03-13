@@ -5,7 +5,7 @@ from typing import Tuple
 
 from .key_derivation import verify_password_argon2
 
-# требования к мастер-паролю: длина и разнообразие символов (HASH-4, спринт 2)
+# требования к мастер-паролю: длина и разнообразие символов
 MIN_PASSWORD_LEN = 12
 COMMON_PASSWORDS = frozenset(
     [
@@ -27,7 +27,7 @@ COMMON_PASSWORDS = frozenset(
 
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
-    # проверка силы пароля: не короче 12 символов, есть все типы символов, не из популярных (спринт 2)
+    # проверка силы пароля: не короче 12 символов, есть все типы символов, не из популярных
     if not password or len(password) < MIN_PASSWORD_LEN:
         return False, "Пароль не менее 12 символов"
     if password.lower().strip() in COMMON_PASSWORDS:
@@ -42,19 +42,19 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
         return False, "Нужен спецсимвол (!@#$ и т.д.)"
     return True, ""
 
-# данные сессии: время входа, последняя активность, количество неудачных попыток (AUTH-4, спринт 2)
+# данные сессии: время входа, последняя активность, количество неудачных попыток
 _login_timestamp = None
 _last_activity_timestamp = None
 _failed_attempt_count = 0
 
 
 def verify_password(stored_hash: str, password: str) -> bool:
-    # проверка пароля через Argon2; сравнение делается библиотекой в постоянное время (спринт 2)
+    # проверка пароля через Argon2; сравнение делается библиотекой в постоянное время
     return verify_password_argon2(stored_hash, password)
 
 
 def record_login_success():
-    # после успешного входа запоминается время входа, активность и обнуляется счётчик ошибок (спринт 2)
+    # после успешного входа запоминается время входа, активность и обнуляется счётчик ошибок
     global _login_timestamp, _last_activity_timestamp, _failed_attempt_count
     import time
 
@@ -64,18 +64,18 @@ def record_login_success():
 
 
 def record_login_failure():
-    # при каждом неверном вводе увеличивается счётчик неудачных попыток (AUTH-3, спринт 2)
+    # при каждом неверном вводе увеличивается счётчик неудачных попыток
     global _failed_attempt_count
     _failed_attempt_count += 1
 
 
 def get_failed_attempt_count():
-    # сколько подряд было неудачных попыток входа (для backoff) (спринт 2)
+    # сколько подряд было неудачных попыток входа (для backoff)
     return _failed_attempt_count
 
 
 def record_activity():
-    # любое действие пользователя обновляет время последней активности (AUTH-4, спринт 2)
+    # любое действие пользователя обновляет время последней активности
     global _last_activity_timestamp
     import time
 
@@ -83,11 +83,11 @@ def record_activity():
 
 
 def get_login_timestamp():
-    # время успешного входа (спринт 2)
+    # время успешного входа
     return _login_timestamp
 
 
 def get_last_activity_timestamp():
-    # время последнего действия (спринт 2)
+    # время последнего действия
     return _last_activity_timestamp
 
