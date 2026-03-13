@@ -1,14 +1,14 @@
-# Тесты конфига — чтение, значение по умолчанию для неизвестного ключа.
-import unittest
+# тесты конфига
 
+import unittest
 from core import config
 
 
-class TestConfigurationLoading(unittest.TestCase):
-    # Читаем из конфига, проверяем дефолты.
+class TestConfig(unittest.TestCase):
+    def test_unknown_key_default(self):
+        # для несуществующего ключа возвращается переданное значение по умолчанию
+        self.assertEqual(config.get("_nonexistent_", "def"), "def")
 
-    def test_get_returns_default_for_unknown_key(self):
-        self.assertEqual(config.get("__test_unknown_key_xyz__", "default"), "default")
-
-    def test_get_returns_default_none(self):
-        self.assertIsNone(config.get("__test_unknown_abc__", None))
+    def test_unknown_key_none(self):
+        # если ключа нет и default=None, возвращается None (чтобы отличать «нет значения» от пустой строки)
+        self.assertIsNone(config.get("_nonexistent_", None))
