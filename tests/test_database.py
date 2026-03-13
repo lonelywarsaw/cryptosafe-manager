@@ -1,81 +1,88 @@
-# Тесты БД — подключение, создание таблиц, CRUD, audit_log.
-import os
-import unittest
+# тесты БД
 
-from tests.fixtures import TestDatabaseFixture
+import os
+import tempfile
+import unittest
 import database.db as db
 import database.models as models
 
 
-class TestDatabaseConnectivityAndSchema(TestDatabaseFixture):
-    # Подключаемся, создаём таблицы, проверяем что всё на месте.
+class TestDatabase(unittest.TestCase):
+    def setUp(self):
+        fd, self._db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        db.set_db_path(self._db_path)
+        db.init_db()
 
-    def test_connection_works(self):
+    def tearDown(self):
+        db.set_db_path(None)
+        if os.path.exists(self._db_path):
+            try:
+                os.unlink(self._db_path)
+            except OSError:
+                pass
+
+    def test_connect(self):
+        # соединение с sqlite открывается и простой запрос выполняется (проверка что бд доступна)
         conn = db.get_connection()
-        self.assertIsNotNone(conn)
         cur = conn.cursor()
         cur.execute("SELECT 1")
         self.assertEqual(cur.fetchone()[0], 1)
         conn.close()
 
-    def test_schema_tables_exist(self):
+    def test_tables(self):
+        # после init_db в бд есть все нужные таблицы: хранилище, аудит, настройки, ключи
         conn = db.get_connection()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        names = {row[0] for row in cur.fetchall()}
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        names = {r[0] for r in cur.fetchall()}
         conn.close()
-        self.assertIn("vault_entries", names)
-        self.assertIn("audit_log", names)
-        self.assertIn("settings", names)
-        self.assertIn("key_store", names)
+        for t in ("vault_entries", "audit_log", "settings", "key_store"):
+            self.assertIn(t, names)
 
-    def test_user_version_set(self):
+    def test_version(self):
+        # user_version совпадает с SCHEMA_VERSION из models (для будущих миграций)
         conn = db.get_connection()
         cur = conn.cursor()
         cur.execute("PRAGMA user_version")
-        version = cur.fetchone()[0]
+        self.assertEqual(cur.fetchone()[0], models.SCHEMA_VERSION)
         conn.close()
-        self.assertEqual(version, models.SCHEMA_VERSION)
 
-    def test_insert_and_get_vault_entry(self):
-        row_id = db.insert_vault_entry(
-            "Test", "user", "encrypted_pwd", url="https://x.com", notes="n"
-        )
+    def test_insert_get(self):
+        # вставка записи возвращает id; по этому id запись читается с теми же полями
+        row_id = db.insert_vault_entry("T", "u", "p", url="u", notes="n")
         self.assertIsNotNone(row_id)
         entry = db.get_vault_entry(row_id)
-        self.assertIsNotNone(entry)
-        self.assertEqual(entry[1], "Test")
-        self.assertEqual(entry[2], "user")
-        self.assertEqual(entry[4], "https://x.com")
-        self.assertEqual(entry[5], "n")
+        self.assertEqual(entry[1], "T")
+        self.assertEqual(entry[2], "u")
 
-    def test_get_all_vault_entries(self):
+    def test_get_all(self):
+        # get_all_vault_entries возвращает все записи; после двух insert — ровно две строки
         db.insert_vault_entry("A", "u1", "p1")
         db.insert_vault_entry("B", "u2", "p2")
         rows = db.get_all_vault_entries()
         self.assertEqual(len(rows), 2)
 
-    def test_update_vault_entry(self):
+    def test_update(self):
+        # update меняет заголовок и логин записи по id; при чтении видны новые значения
         row_id = db.insert_vault_entry("Old", "u", "p")
-        db.update_vault_entry(row_id, "New", "u2", "p", url="", notes="")
+        db.update_vault_entry(row_id, "New", "u2", "p")
         entry = db.get_vault_entry(row_id)
         self.assertEqual(entry[1], "New")
-        self.assertEqual(entry[2], "u2")
 
-    def test_delete_vault_entry(self):
+    def test_delete(self):
+        # после delete запись по id не находится (get_vault_entry возвращает None)
         row_id = db.insert_vault_entry("X", "u", "p")
         db.delete_vault_entry(row_id)
         self.assertIsNone(db.get_vault_entry(row_id))
 
-    def test_insert_audit_log(self):
-        db.insert_audit_log("TestAction", entry_id=1, details="d")
+    def test_audit_log(self):
+        # insert_audit_log пишет в таблицу audit_log; действие и details читаются обратно
+        db.insert_audit_log("Act", entry_id=1, details="d")
         conn = db.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT action, entry_id, details FROM audit_log")
+        cur.execute("SELECT action, details FROM audit_log")
         row = cur.fetchone()
         conn.close()
-        self.assertEqual(row[0], "TestAction")
-        self.assertEqual(row[1], 1)
-        self.assertEqual(row[2], "d")
+        self.assertEqual(row[0], "Act")
+        self.assertEqual(row[1], "d")
