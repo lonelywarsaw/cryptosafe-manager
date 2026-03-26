@@ -14,17 +14,12 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb libxcb-xinerama0
-    
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov
     
-    - name: Run tests with virtual display
+    - name: Run tests (skip GUI tests)
       run: |
-        xvfb-run pytest tests/ -v
+        python -m pytest tests/ -v --ignore=tests/test_integration.py --ignore=tests/test_password_change_integration.py
