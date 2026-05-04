@@ -3,6 +3,7 @@
 from PyQt6.QtWidgets import QLineEdit, QWidget, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPalette
+from ..strings import t
 
 
 class PasswordEntry(QWidget):
@@ -15,8 +16,8 @@ class PasswordEntry(QWidget):
         self._line.setPlaceholderText("••••••••")
         self._line.setAutoFillBackground(True)
         layout.addWidget(self._line)
-        self._btn = QPushButton("👁")
-        self._btn.setFixedWidth(36)
+        self._btn = QPushButton(t("password_show"))
+        self._btn.setMinimumWidth(72)
         self._btn.setCheckable(True)
         self._btn.toggled.connect(self._on_toggle)
         layout.addWidget(self._btn)
@@ -37,10 +38,10 @@ class PasswordEntry(QWidget):
         # при checked пароль показывается текстом, иначе снова скрывается точками
         if checked:
             self._line.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._btn.setText("🙈")
+            self._btn.setText(t("password_hide"))
         else:
             self._line.setEchoMode(QLineEdit.EchoMode.Password)
-            self._btn.setText("👁")
+            self._btn.setText(t("password_show"))
 
     def text(self):
         return self._line.text()

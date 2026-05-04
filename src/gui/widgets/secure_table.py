@@ -3,6 +3,7 @@
 
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 from PyQt6.QtCore import Qt
+from ..strings import t
 
 
 class SecureTable(QTableWidget):
@@ -10,7 +11,9 @@ class SecureTable(QTableWidget):
         super().__init__(parent)
         # (спринт3) таблица: название, логин (маска), URL/domain, last modified, заметки, пароль
         self.setColumnCount(6)
-        self.setHorizontalHeaderLabels(["Название", "Логин", "URL", "Последнее изменение", "Заметки", "Пароль"])
+        self.setHorizontalHeaderLabels(
+            [t("title"), t("login"), t("url"), t("last_modified"), t("notes"), t("password_field")]
+        )
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setSectionsMovable(True)  # (GUI-2)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)  # (GUI-2)

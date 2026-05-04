@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
-    QSpinBox, QComboBox, QPushButton, QHBoxLayout, QLabel, QGroupBox,
+    QSpinBox, QComboBox, QPushButton, QHBoxLayout, QLabel, QCheckBox, QLineEdit,
 )
 from PyQt6.QtCore import Qt
 
@@ -43,6 +43,15 @@ class SettingsDialog(QDialog):
         self._clipboard_spin.setRange(0, 300)
         self._clipboard_spin.setSuffix(" сек")
         form.addRow(t("clipboard_timeout"), self._clipboard_spin)
+        self._notifications_checkbox = QCheckBox()
+        form.addRow(t("notifications_enabled"), self._notifications_checkbox)
+        self._security_level = QComboBox()
+        self._security_level.addItems(
+            [t("security_basic"), t("security_advanced"), t("security_paranoid")]
+        )
+        form.addRow(t("security_level"), self._security_level)
+        self._whitelist_edit = QLineEdit()
+        form.addRow(t("clipboard_whitelist"), self._whitelist_edit)
         self._autolock_spin = QSpinBox()
         self._autolock_spin.setRange(0, 120)
         self._autolock_spin.setSuffix(" мин")
@@ -70,6 +79,12 @@ class SettingsDialog(QDialog):
     def _load(self):
         # при открытии диалога в поля подставляются текущие значения из config
         self._clipboard_spin.setValue(int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30"))
+        self._notifications_checkbox.setChecked(
+            int(config.get(config.CLIPBOARD_NOTIFICATIONS, "1") or "1") > 0
+        )
+        level = config.get(config.CLIPBOARD_SECURITY_LEVEL, "basic") or "basic"
+        self._security_level.setCurrentIndex({"basic": 0, "advanced": 1, "paranoid": 2}.get(level, 0))
+        self._whitelist_edit.setText(config.get(config.CLIPBOARD_APP_WHITELIST, "") or "")
         self._autolock_spin.setValue(int(config.get(config.AUTO_LOCK_MINUTES, "5") or "5"))
         theme = config.get(config.THEME, "system") or "system"
         self._theme_combo.setCurrentIndex({"system": 0, "dark": 1, "light": 2}.get(theme, 0))
@@ -79,6 +94,10 @@ class SettingsDialog(QDialog):
     def _apply(self):
         # выбранные значения записываются в config, диалог закрывается
         config.set(config.CLIPBOARD_TIMEOUT, str(self._clipboard_spin.value()))
+        config.set(config.CLIPBOARD_NOTIFICATIONS, "1" if self._notifications_checkbox.isChecked() else "0")
+        level_map = {0: "basic", 1: "advanced", 2: "paranoid"}
+        config.set(config.CLIPBOARD_SECURITY_LEVEL, level_map[self._security_level.currentIndex()])
+        config.set(config.CLIPBOARD_APP_WHITELIST, (self._whitelist_edit.text() or "").strip())
         config.set(config.AUTO_LOCK_MINUTES, str(self._autolock_spin.value()))
         theme_map = {0: "system", 1: "dark", 2: "light"}
         config.set(config.THEME, theme_map[self._theme_combo.currentIndex()])

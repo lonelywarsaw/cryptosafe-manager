@@ -87,7 +87,7 @@ class EntryDialog(QDialog):
         except Exception:
             pass
 
-        self._btn_generate = QPushButton("Generate Password")
+        self._btn_generate = QPushButton(t("password_generate"))
         self._btn_generate.clicked.connect(self._open_password_generator_dialog)
         layout.addWidget(self._btn_generate)
 
@@ -108,9 +108,9 @@ class EntryDialog(QDialog):
         form.addRow(t("notes"), self._notes)
 
         self._category = QLineEdit()
-        self._category.setPlaceholderText("Category (optional)")
+        self._category.setPlaceholderText(t("category_optional"))
         self._category.setText(category or "")
-        form.addRow("Category", self._category)
+        form.addRow(t("category"), self._category)
 
         layout.addLayout(form)
 
@@ -143,7 +143,7 @@ class EntryDialog(QDialog):
         if url_raw:
             url_s = self._validate_and_sanitize_url(url_raw)
             if url_s is None:
-                QMessageBox.warning(self, t("url"), "Некорректный URL (нужен http/https)")
+                QMessageBox.warning(self, t("url"), t("invalid_url"))
                 return
             # чтобы в payload попал именно валидированный вариант
             self._url.setText(url_s)
@@ -189,7 +189,8 @@ class EntryDialog(QDialog):
         if score > 4:
             score = 4
         self._strength_bar.setValue(score)
-        self._strength_label.setText("Strength: %d/4" % score)
+        # локализованный текст (спринт3)
+        self._strength_label.setText(t("password_strength") % score)
 
     def _validate_and_sanitize_url(self, url_raw: str):
         u = (url_raw or "").strip()
@@ -239,7 +240,7 @@ class EntryDialog(QDialog):
     def _open_password_generator_dialog(self):
         # pop-up конфиг для генератора (GEN-2 / DIALOG-1)
         dlg = QDialog(self)
-        dlg.setWindowTitle("Password generator")
+        dlg.setWindowTitle(t("password_generate"))
         dlg.setMinimumWidth(360)
 
         v = QVBoxLayout(dlg)
@@ -248,25 +249,25 @@ class EntryDialog(QDialog):
         spin_len = QSpinBox(dlg)
         spin_len.setRange(8, 64)
         spin_len.setValue(16)
-        form.addRow("Length", spin_len)
+        form.addRow(t("length"), spin_len)
 
-        cb_upper = QCheckBox("Upper A-Z")
+        cb_upper = QCheckBox(t("upper"))
         cb_upper.setChecked(True)
         form.addRow(cb_upper.text(), cb_upper)
 
-        cb_lower = QCheckBox("Lower a-z")
+        cb_lower = QCheckBox(t("lower"))
         cb_lower.setChecked(True)
         form.addRow(cb_lower.text(), cb_lower)
 
-        cb_digits = QCheckBox("Digits 0-9")
+        cb_digits = QCheckBox(t("digits"))
         cb_digits.setChecked(True)
         form.addRow(cb_digits.text(), cb_digits)
 
-        cb_symbols = QCheckBox("Symbols !@#$%^&*")
+        cb_symbols = QCheckBox(t("symbols"))
         cb_symbols.setChecked(True)
         form.addRow(cb_symbols.text(), cb_symbols)
 
-        cb_amb = QCheckBox("Exclude ambiguous (l I 1 0 O)")
+        cb_amb = QCheckBox(t("exclude_ambiguous"))
         cb_amb.setChecked(True)
         form.addRow(cb_amb.text(), cb_amb)
 

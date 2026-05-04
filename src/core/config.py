@@ -60,6 +60,9 @@ LOCK_ON_FOCUS_LOST = "lock_on_focus_lost"
 LOCK_ON_MINIMIZE = "lock_on_minimize"
 THEME = "theme"
 LANGUAGE = "language"
+CLIPBOARD_NOTIFICATIONS = "clipboard_notifications"
+CLIPBOARD_SECURITY_LEVEL = "clipboard_security_level"
+CLIPBOARD_APP_WHITELIST = "clipboard_app_whitelist"
 
 
 def _try_decode_salt(value):

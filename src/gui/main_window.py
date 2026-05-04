@@ -19,6 +19,9 @@ from core.key_manager import get_key_manager
 from core import events
 from database import db as database_db
 from core.vault.entry_manager import EntryManager
+from core.clipboard.clipboard_service import ClipboardService
+from core.clipboard.clipboard_monitor import ClipboardMonitor
+from core.clipboard.platform_adapter import create_platform_adapter
 from .strings import t
 from .widgets.secure_table import SecureTable
 
@@ -38,10 +41,17 @@ class MainWindow(QMainWindow):
         self._password_widgets: Dict[int, Tuple[QLabel, QPushButton]] = {}
         self._global_show_passwords = False
 
+        # (спринт4) сервис буфера обмена: авто-очистка, события, Observer
+        self._clipboard_service = ClipboardService(create_platform_adapter())
+        self._clipboard_service.subscribe(self._on_clipboard_status_changed)
+        self._clipboard_monitor = ClipboardMonitor(self._clipboard_service.adapter)
+        self._clipboard_monitor.set_on_change(self._on_external_clipboard_change)
+
         self._build_ui()
         self._build_menu()
         self._build_status_bar()
         self._start_buffer_timer()
+        self._clipboard_monitor.start()
 
     def changeEvent(self, event):
         # (CACHE-2, спринт2) при минимизации — автосброс ключа/блокировка
@@ -73,7 +83,7 @@ class MainWindow(QMainWindow):
 
         # (спринт3) поиск: realtime фильтр по полям с учётом опечаток
         self._search = QLineEdit()
-        self._search.setPlaceholderText("title:..., username:..., url:..., notes:...  |  free text")
+        self._search.setPlaceholderText(t("search_placeholder"))
         self._search.textChanged.connect(self._on_search_changed)
         layout.addWidget(self._search)
 
@@ -84,11 +94,11 @@ class MainWindow(QMainWindow):
         self._load_table()
         layout.addWidget(self._table)
 
-        # toolbar: глобальный toggle видимости паролей (GUI-3)
-        tb = QToolBar("Passwords", self)
+        # toolbar: глобальный toggle видимости паролей (GUI-3, спринт4: локализованный текст)
+        tb = QToolBar(t("clipboard_toolbar_title"), self)
         tb.setMovable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
-        self._act_toggle_passwords = QAction("Show passwords", self)
+        self._act_toggle_passwords = QAction(t("clipboard_toolbar_show_passwords"), self)
         self._act_toggle_passwords.setCheckable(True)
         self._act_toggle_passwords.setChecked(False)
         self._act_toggle_passwords.setShortcut("Ctrl+Shift+P")
@@ -111,6 +121,8 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction(t("copy_login"), self._on_copy_login)
         edit_menu.addAction(t("copy_password"), self._on_copy_password)
+        edit_menu.addAction(t("clipboard_copy_all"), self._on_copy_all)
+        edit_menu.addAction(t("clipboard_manual_clear"), self._on_clear_clipboard)
         edit_menu.addSeparator()
         edit_menu.addAction(t("change_password_title"), self._on_change_password)
         view_menu = menubar.addMenu(t("view"))
@@ -126,8 +138,10 @@ class MainWindow(QMainWindow):
         sm = get_state_manager()
         self._status_label = QLabel(t("status_locked") if sm.is_locked() else t("status_unlocked"))
         self._buffer_label = QLabel(t("buffer_timer") % str(sm.get_clipboard_seconds_left()))
+        self._clipboard_status_label = QLabel(t("clipboard_status_idle"))
         self._status_bar.addPermanentWidget(self._status_label)
         self._status_bar.addPermanentWidget(self._buffer_label)
+        self._status_bar.addPermanentWidget(self._clipboard_status_label)
 
     def _start_buffer_timer(self):
         self._buffer_timer = QTimer(self)
@@ -143,9 +157,11 @@ class MainWindow(QMainWindow):
         self._buffer_label.setText(t("buffer_timer") % str(left))
         if prev == 1 and left == 0:
             try:
-                QApplication.clipboard().clear()
+                self._clipboard_service.clear(reason="timer_tick")
             except Exception:
                 pass
+        if left == 5 and self._clipboard_service.get_status().get("active"):
+            self.statusBar().showMessage(t("clipboard_warning_soon_clear"), 1500)
         # авто-блокировка: если прошло больше N минут без действий — блокируем сессию
         auto_lock_min = int(config.get(config.AUTO_LOCK_MINUTES, "5") or "5")
         if auto_lock_min > 0 and not sm.is_locked() and sm.get_inactivity_seconds() >= auto_lock_min * 60:
@@ -155,6 +171,10 @@ class MainWindow(QMainWindow):
         from core.key_manager import clear_encryption_key
         if hasattr(self, "_status_label") and not self._status_label:
             return
+        try:
+            self._clipboard_service.clear(reason="vault_lock")
+        except Exception:
+            pass
         clear_encryption_key()
         get_state_manager().set_locked(True)
         if hasattr(self, "_status_label"):
@@ -276,8 +296,8 @@ class MainWindow(QMainWindow):
             hb = QHBoxLayout(cell)
             hb.setContentsMargins(0, 0, 0, 0)
             label = QLabel(masked_password)
-            btn = QPushButton("👁")
-            btn.setFixedWidth(36)
+            btn = QPushButton(t("password_show"))
+            btn.setMinimumWidth(72)
             hb.addWidget(label)
             hb.addWidget(btn)
 
@@ -402,7 +422,7 @@ class MainWindow(QMainWindow):
         label, btn = widget
         if not show:
             label.setText("••••••••")
-            btn.setText("👁")
+            btn.setText(t("password_show"))
             if entry_id in self._password_revealed:
                 # убираем ссылку на plaintext (SEC-1: не держим постоянно)
                 del self._password_revealed[entry_id]
@@ -414,7 +434,7 @@ class MainWindow(QMainWindow):
             pwd = entry.get("password") or ""
             self._password_revealed[entry_id] = pwd
             label.setText(pwd)
-            btn.setText("🙈")
+            btn.setText(t("password_hide"))
         except Exception:
             # без деталей (SEC-4)
             self._show_error()
@@ -475,6 +495,8 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         a_copy_login = menu.addAction(t("copy_login"))
         a_copy_password = menu.addAction(t("copy_password"))
+        a_copy_all = menu.addAction(t("clipboard_copy_all"))
+        a_clear = menu.addAction(t("clipboard_manual_clear"))
         menu.addSeparator()
         a_edit = menu.addAction(t("edit_"))
         a_delete = menu.addAction(t("delete"))
@@ -484,6 +506,10 @@ class MainWindow(QMainWindow):
             self._copy_selected_login(entry_id)
         elif action == a_copy_password:
             self._copy_selected_password(entry_id)
+        elif action == a_copy_all:
+            self._copy_selected_all(entry_id)
+        elif action == a_clear:
+            self._on_clear_clipboard()
         elif action == a_edit:
             self._on_edit(entry_id_override=entry_id)
         elif action == a_delete:
@@ -548,10 +574,15 @@ class MainWindow(QMainWindow):
             self._show_error()
 
     def _copy_to_clipboard(self, entry_id, text, kind):
-        # текст копируется в буфер обмена, таймер буфера сбрасывается, публикуется событие ClipboardCopied
-        QApplication.clipboard().setText(text)
-        self.reset_buffer_timer()
-        events.publish(events.ClipboardCopied, sync=True, entry_id=entry_id, kind=kind)
+        # текст копируется через ClipboardService (спринт4), таймер/события обрабатываются внутри сервиса
+        if not text:
+            return
+        # vault должен быть разблокирован (SEC-4), проверяем state_manager
+        if get_state_manager().is_locked():
+            QMessageBox.warning(self, t("app_title"), t("error_generic"))
+            return
+        data_type = "password" if kind == "password" else "username"
+        self._clipboard_service.copy_text(text, data_type=data_type, source_entry_id=entry_id)
 
     def _copy_selected_login(self, entry_id: int):
         get_state_manager().touch_activity()
@@ -569,6 +600,23 @@ class MainWindow(QMainWindow):
         except Exception:
             self._show_error()
 
+    def _copy_selected_all(self, entry_id: int):
+        get_state_manager().touch_activity()
+        try:
+            entry = self._entry_manager.get_entry(entry_id)
+            data = "\n".join(
+                [
+                    str(entry.get("title", "") or ""),
+                    str(entry.get("username", "") or ""),
+                    str(entry.get("password", "") or ""),
+                    str(entry.get("url", "") or ""),
+                    str(entry.get("notes", "") or ""),
+                ]
+            ).strip()
+            self._copy_to_clipboard(entry_id, data, "all")
+        except Exception:
+            self._show_error()
+
     def _on_copy_login(self):
         entry_id = self._get_selected_entry_id()
         if entry_id is None:
@@ -582,6 +630,16 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, t("copy_password"), t("select_entry_edit"))
             return
         self._copy_selected_password(entry_id)
+
+    def _on_copy_all(self):
+        entry_id = self._get_selected_entry_id()
+        if entry_id is None:
+            QMessageBox.information(self, t("clipboard_copy_all"), t("select_entry_edit"))
+            return
+        self._copy_selected_all(entry_id)
+
+    def _on_clear_clipboard(self):
+        self._clipboard_service.clear(reason="manual")
 
     def _on_change_password(self):
         get_state_manager().touch_activity()
@@ -615,5 +673,38 @@ class MainWindow(QMainWindow):
         self._status_label.setText(t("status_locked") if sm.is_locked() else t("status_unlocked"))
         self._buffer_label.setText(t("buffer_timer") % str(sm.get_clipboard_seconds_left()))
         self._table.setHorizontalHeaderLabels(
-            [t("title"), t("login"), t("url"), "Last modified", "notes", "Пароль"]
+            [t("title"), t("login"), t("url"), t("last_modified"), t("notes"), t("password_field")]
         )
+
+    def _mask_preview(self, value: str) -> str:
+        v = value or ""
+        if len(v) <= 3:
+            return "•••"
+        return v[:3] + "••••••"
+
+    def _on_clipboard_status_changed(self, status: Dict):
+        # callback может приходить из таймера, UI обновляем через main-thread очередь
+        QTimer.singleShot(0, lambda: self._apply_clipboard_status(status))
+
+    def _apply_clipboard_status(self, status: Dict):
+        if not status.get("active"):
+            self._clipboard_status_label.setText(t("clipboard_status_idle"))
+            self.statusBar().showMessage(t("clipboard_cleared_status"), 1500)
+            return
+        data_type = status.get("data_type", "text")
+        left = status.get("remaining_seconds", 0)
+        source = status.get("source_entry_id")
+        source_label = str(source) if source is not None else t("clipboard_source_unknown")
+        self._clipboard_status_label.setText(t("clipboard_copied_status") % (data_type, str(left)))
+        self.statusBar().showMessage(t("clipboard_preview_hidden") % (data_type, source_label), 1500)
+
+    def _on_external_clipboard_change(self, _new_value: str):
+        self._clipboard_service.clear_if_active_data_replaced()
+
+    def closeEvent(self, event):
+        try:
+            self._clipboard_monitor.stop()
+            self._clipboard_service.clear(reason="app_close")
+        except Exception:
+            pass
+        super().closeEvent(event)
