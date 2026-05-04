@@ -6,7 +6,7 @@ import database.db as db
 from core.vault.entry_manager import EntryManager
 
 try:
-    import cryptography  # noqa: F401
+    import cryptography
     _HAS_CRYPTO = True
 except Exception:
     _HAS_CRYPTO = False
