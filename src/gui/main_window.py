@@ -160,6 +160,13 @@ class MainWindow(QMainWindow):
                 self._clipboard_service.clear(reason="timer_tick")
             except Exception:
                 pass
+            # дублируем очистку Qt-буфера в GUI-потоке (фоновый threading.Timer уже мог снять секрет в сервисе)
+            try:
+                app = QApplication.instance()
+                if app is not None:
+                    app.clipboard().clear()
+            except Exception:
+                pass
         if left == 5 and self._clipboard_service.get_status().get("active"):
             self.statusBar().showMessage(t("clipboard_warning_soon_clear"), 1500)
         # авто-блокировка: если прошло больше N минут без действий — блокируем сессию
@@ -451,29 +458,42 @@ class MainWindow(QMainWindow):
     def _on_global_toggle_passwords(self, checked: bool):
         # GUI-3: глобальный toggle + Ctrl+Shift+P
         self._global_show_passwords = bool(checked)
-        # показываем/скрываем пароли только у выбранных строк, чтобы не расшифровывать всё подряд
-        selected = self._table.selectedItems()
+        # выделение по строкам (selectedItems не видит ячейку с виджетом пароля — только QTableWidgetItem)
         selected_ids = set()
-        for it in selected:
-            eid = it.data(Qt.ItemDataRole.UserRole)
-            if eid is not None:
-                selected_ids.add(int(eid))
-        if not selected_ids:
-            # если выделения нет — используем текущую строку
-            cur_item = self._table.currentItem()
-            if cur_item is not None:
-                eid = cur_item.data(Qt.ItemDataRole.UserRole)
+        sm = self._table.selectionModel()
+        if sm is not None:
+            for idx in sm.selectedRows():
+                item = self._table.item(idx.row(), 0)
+                if item is not None:
+                    eid = item.data(Qt.ItemDataRole.UserRole)
+                    if eid is not None:
+                        selected_ids.add(int(eid))
+        cur_row = self._table.currentRow()
+        if cur_row >= 0:
+            item = self._table.item(cur_row, 0)
+            if item is not None:
+                eid = item.data(Qt.ItemDataRole.UserRole)
                 if eid is not None:
                     selected_ids.add(int(eid))
+        # явный «показать всё» по тулбару: если строк не выделили — все видимые записи
+        if not selected_ids and checked:
+            selected_ids = set(self._password_widgets.keys())
 
         if not selected_ids:
+            if checked:
+                self._act_toggle_passwords.blockSignals(True)
+                self._act_toggle_passwords.setChecked(False)
+                self._act_toggle_passwords.blockSignals(False)
+                self._global_show_passwords = False
+            else:
+                for eid in list(self._password_revealed.keys()):
+                    self._toggle_password_cell(eid, show=False)
             return
 
         for eid in selected_ids:
             self._toggle_password_cell(eid, show=self._global_show_passwords)
 
         if not self._global_show_passwords:
-            # скрываем все раскрытые пароли
             for eid in list(self._password_revealed.keys()):
                 self._toggle_password_cell(eid, show=False)
 

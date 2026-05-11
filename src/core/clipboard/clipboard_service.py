@@ -169,6 +169,16 @@ class ClipboardService:
                 self._platform.clear_clipboard()
             except Exception:
                 pass
+            # QClipboard только из GUI-потока; таймер threading.Timer вызывает нас из фона — иначе падение на Windows
+            try:
+                if threading.current_thread() is threading.main_thread():
+                    from PyQt6.QtWidgets import QApplication
+
+                    app = QApplication.instance()
+                    if app is not None:
+                        app.clipboard().clear()
+            except Exception:
+                pass
 
             self._current.secure_wipe()
             self._current = None

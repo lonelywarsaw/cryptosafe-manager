@@ -5,6 +5,7 @@ import sqlite3
 import threading
 import queue
 import time
+from datetime import datetime
 
 from . import models
 
@@ -129,6 +130,23 @@ def _with_connection(operation):
             _return_pooled_connection(conn)
 
 
+def _ensure_audit_log_columns(cur):
+    # спринт 5: дополняем audit_log, если база создана старой миграцией без новых полей
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
+    if not cur.fetchone():
+        return
+    cols = {r[1] for r in cur.execute("PRAGMA table_info(audit_log)").fetchall()}
+    for name, decl in (
+        ("sequence_number", "INTEGER"),
+        ("previous_hash", "TEXT"),
+        ("entry_data", "BLOB"),
+        ("public_key", "TEXT"),
+    ):
+        if name not in cols:
+            cur.execute("ALTER TABLE audit_log ADD COLUMN %s %s" % (name, decl))
+    cur.execute("UPDATE audit_log SET sequence_number = id WHERE sequence_number IS NULL")
+
+
 def init_db():
     # таблицы создаются, если их ещё нет; user_version хранит версию схемы для миграций (спринт 2: миграция key_store)
     def apply(conn):
@@ -139,10 +157,8 @@ def init_db():
             for sql in models.DDL:
                 cur.execute(sql)
             cur.execute("PRAGMA user_version = %d" % models.SCHEMA_VERSION)
-            conn.commit()
-            return
         # с версии 1 переходим на key_store с key_data, version, created_at (спринт 2)
-        if ver == 1:
+        elif ver == 1:
             cur.execute(
                 "CREATE TABLE IF NOT EXISTS key_store_new (id INTEGER PRIMARY KEY AUTOINCREMENT, key_type TEXT, key_data BLOB, version INTEGER DEFAULT 1, created_at TEXT)"
             )
@@ -191,10 +207,9 @@ def init_db():
             cur.execute("DROP TABLE IF EXISTS key_store")
             cur.execute("ALTER TABLE key_store_new RENAME TO key_store")
             cur.execute("PRAGMA user_version = 2")
-            conn.commit()
 
         # спринт3: меняется схема vault_entries (encrypted_password -> encrypted_data)
-        if ver == 2:
+        elif ver == 2:
             # ВАЖНО: мы не можем корректно перешифровать старые XOR-данные в AES-GCM,
             # потому что для этого нужен ключ (PBKDF2 доступен только после разблокировки).
             # Поэтому делаем безопасную перестройку схемы без переноса старых секретов.
@@ -202,14 +217,21 @@ def init_db():
             for sql in models.DDL:
                 cur.execute(sql)
             cur.execute("PRAGMA user_version = %d" % models.SCHEMA_VERSION)
-            conn.commit()
+
+        elif ver == 3:
+            _ensure_audit_log_columns(cur)
+            cur.execute("PRAGMA user_version = 4")
+
+        _ensure_audit_log_columns(cur)
+        conn.commit()
 
     _with_connection(apply)
 
 
 def _timestamp():
-    # текущее время в секундах (для created_at, updated_at, audit)
-    return str(int(time.time()))
+    # единый формат даты в БД: YYYY-MM-DD (спринт4/полировка UI)
+    # Хранение времени отдельно не требуется для текущих задач проекта.
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 def insert_vault_entry(encrypted_data, tags=None):
@@ -278,13 +300,57 @@ def delete_vault_entry(entry_id):
     _with_connection(apply)
 
 
-def insert_audit_log(action, entry_id=None, details=None):
-    # в журнал аудита добавляется строка (action, timestamp, details); signature пока пустой
+def get_audit_tail():
+    # последняя строка audit_log для цепочки подписи (спринт 5)
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO audit_log (action, timestamp, entry_id, details, signature) VALUES (?, ?, ?, ?, ?)",
-            (action, _timestamp(), entry_id, details or "", ""),
+            "SELECT id, signature, details, COALESCE(sequence_number, id) FROM audit_log ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "signature": row[1], "details": row[2], "sequence_number": row[3]}
+
+    return _with_connection(apply)
+
+
+def insert_audit_log(
+    action,
+    entry_id=None,
+    details=None,
+    previous_hash=None,
+    entry_data=None,
+    signature=None,
+    public_key=None,
+    sequence_number=None,
+):
+    # в журнал аудита добавляется строка; спринт 5 — sequence_number, previous_hash, entry_data, подпись
+    seq_arg = sequence_number
+
+    def apply(conn):
+        cur = conn.cursor()
+        sn = seq_arg
+        if sn is None:
+            cur.execute("SELECT COALESCE(MAX(COALESCE(sequence_number, id)), 0) FROM audit_log")
+            sn = int(cur.fetchone()[0] or 0) + 1
+        ph = "" if previous_hash is None else previous_hash
+        sig = "" if signature is None else signature
+        cur.execute(
+            """INSERT INTO audit_log
+               (action, timestamp, entry_id, details, signature, sequence_number, previous_hash, entry_data, public_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                action,
+                _timestamp(),
+                entry_id,
+                details or "",
+                sig,
+                sn,
+                ph,
+                entry_data,
+                public_key,
+            ),
         )
         conn.commit()
 

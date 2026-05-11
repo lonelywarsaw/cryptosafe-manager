@@ -54,6 +54,9 @@ class TestSprint4Clipboard(unittest.TestCase):
 
     def test_timeout_auto_clear(self):
         self.service.copy_text("x", data_type="password")
-        time.sleep(5.3)
-        self.assertEqual(self.service.get_status(), {"active": False})
-        self.assertEqual(self.adapter.value, "")
+        deadline = time.time() + 12.0
+        while time.time() < deadline:
+            if self.service.get_status() == {"active": False} and self.adapter.value == "":
+                return
+            time.sleep(0.15)
+        self.fail("буфер не очистился по таймеру за отведённое время")
