@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import platform
 import subprocess
-from typing import List, Optional
+from typing import Optional
 
 from PyQt6.QtWidgets import QApplication
 
@@ -21,7 +21,6 @@ class ClipboardAdapter(ABC):
 
 
 class QtClipboardAdapter(ClipboardAdapter):
-    # адаптер вокруг QApplication.clipboard
     def _clip(self):
         app = QApplication.instance()
         if not app:
@@ -44,6 +43,7 @@ class QtClipboardAdapter(ClipboardAdapter):
             return False
         try:
             cb.clear()
+            cb.setText("")
             return True
         except Exception:
             return False
@@ -60,8 +60,10 @@ class QtClipboardAdapter(ClipboardAdapter):
 
 
 class WindowsClipboardAdapter(ClipboardAdapter):
+    # Windows: win32clipboard + синхронизация с Qt (один адаптер для спринта 4)
     def __init__(self):
         self._win32clipboard = None
+        self._qt = QtClipboardAdapter()
         try:
             import win32clipboard  # type: ignore
 
@@ -69,7 +71,7 @@ class WindowsClipboardAdapter(ClipboardAdapter):
         except Exception:
             self._win32clipboard = None
 
-    def copy_to_clipboard(self, data: str) -> bool:
+    def _win32_copy(self, data: str) -> bool:
         if not self._win32clipboard:
             return False
         try:
@@ -85,7 +87,7 @@ class WindowsClipboardAdapter(ClipboardAdapter):
                 pass
             return False
 
-    def clear_clipboard(self) -> bool:
+    def _win32_clear(self) -> bool:
         if not self._win32clipboard:
             return False
         try:
@@ -100,105 +102,53 @@ class WindowsClipboardAdapter(ClipboardAdapter):
                 pass
             return False
 
-    def get_clipboard_content(self) -> Optional[str]:
-        if not self._win32clipboard:
-            return None
-        try:
-            self._win32clipboard.OpenClipboard()
-            text = self._win32clipboard.GetClipboardData(self._win32clipboard.CF_UNICODETEXT)
-            self._win32clipboard.CloseClipboard()
-            return text if text is not None else ""
-        except Exception:
-            try:
-                self._win32clipboard.CloseClipboard()
-            except Exception:
-                pass
-            return None
-
-
-class PyperclipAdapter(ClipboardAdapter):
-    def __init__(self):
-        self._pyperclip = None
-        try:
-            import pyperclip  # type: ignore
-
-            self._pyperclip = pyperclip
-        except Exception:
-            self._pyperclip = None
-
-    def copy_to_clipboard(self, data: str) -> bool:
-        if not self._pyperclip:
-            return False
-        try:
-            self._pyperclip.copy(data or "")
-            return True
-        except Exception:
-            return False
-
-    def clear_clipboard(self) -> bool:
-        return self.copy_to_clipboard("")
-
-    def get_clipboard_content(self) -> Optional[str]:
-        if not self._pyperclip:
-            return None
-        try:
-            return self._pyperclip.paste() or ""
-        except Exception:
-            return None
-
-
-class LinuxClipboardAdapter(ClipboardAdapter):
-    def __init__(self):
-        self._fallback = PyperclipAdapter()
-
-    def _run(self, command: List[str], input_text: Optional[str] = None) -> Optional[str]:
+    def _powershell_clear(self) -> bool:
         try:
             proc = subprocess.run(
-                command,
-                input=input_text,
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Set-Clipboard -Value $null",
+                ],
                 capture_output=True,
-                text=True,
-                timeout=2,
+                timeout=3,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            if proc.returncode != 0:
-                return None
-            return proc.stdout
+            return proc.returncode == 0
         except Exception:
-            return None
+            return False
 
     def copy_to_clipboard(self, data: str) -> bool:
-        value = data or ""
-        if self._run(["wl-copy"], input_text=value) is not None:
-            return True
-        if self._run(["xclip", "-selection", "clipboard"], input_text=value) is not None:
-            return True
-        if self._run(["xsel", "--clipboard", "--input"], input_text=value) is not None:
-            return True
-        return self._fallback.copy_to_clipboard(value)
+        ok = self._win32_copy(data)
+        self._qt.copy_to_clipboard(data)
+        return ok or self._qt.copy_to_clipboard(data)
 
     def clear_clipboard(self) -> bool:
-        return self.copy_to_clipboard("")
+        ok = self._win32_clear()
+        self._powershell_clear()
+        return self._qt.clear_clipboard() or ok
 
     def get_clipboard_content(self) -> Optional[str]:
-        for cmd in (
-            ["wl-paste", "--no-newline"],
-            ["xclip", "-selection", "clipboard", "-o"],
-            ["xsel", "--clipboard", "--output"],
-        ):
-            result = self._run(cmd)
-            if result is not None:
-                return result
-        return self._fallback.get_clipboard_content()
+        if self._win32clipboard:
+            try:
+                self._win32clipboard.OpenClipboard()
+                text = self._win32clipboard.GetClipboardData(self._win32clipboard.CF_UNICODETEXT)
+                self._win32clipboard.CloseClipboard()
+                if text is not None:
+                    return text
+            except Exception:
+                try:
+                    self._win32clipboard.CloseClipboard()
+                except Exception:
+                    pass
+        return self._qt.get_clipboard_content()
 
 
 def create_platform_adapter() -> ClipboardAdapter:
-    system = platform.system().lower()
-    if system == "windows":
+    if platform.system().lower() == "windows":
         adapter = WindowsClipboardAdapter()
         if adapter._win32clipboard is not None:
             return adapter
-    if system == "linux":
-        return LinuxClipboardAdapter()
     return QtClipboardAdapter()
-

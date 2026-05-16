@@ -6,11 +6,12 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from core import config
 from core import events
 from core.audit import register as register_audit
+from core.audit import verify_integrity
 from database import db as database_db
 from gui.theme import apply_theme
 from gui.main_window import MainWindow
@@ -40,6 +41,18 @@ def main():
         return 0
 
     # UserLoggedIn уже публикуется в unlock_dialog после успешного входа (спринт 2)
+
+    try:
+        audit_check = verify_integrity(sample_limit=1000)
+        if not audit_check.get("verified") and "pytest" not in sys.modules:
+            from gui.strings import t
+            QMessageBox.warning(
+                None,
+                t("audit_tamper_title"),
+                t("audit_tamper_message"),
+            )
+    except Exception:
+        pass
 
     win = MainWindow()
     win.set_locked(False)

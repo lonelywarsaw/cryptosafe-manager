@@ -57,15 +57,14 @@ def _log_event(event_type: str, entry_id=None, details=None):
         sk = derive_audit_signing_key(ek)
         signer = AuditLogSigner(sk if sk else b"__no_session_audit_hmac_dev_only__")
 
+        from .integrity import entry_hash_for_chain
+
         prev_row = db.get_audit_tail()
-        if prev_row:
-            prev_hash = hashlib.sha256(
-                (
-                    str(prev_row.get("id", ""))
-                    + str(prev_row.get("signature", "") or "")
-                    + str(prev_row.get("details", "") or "")
-                ).encode("utf-8")
-            ).hexdigest()
+        if prev_row and prev_row.get("entry_data"):
+            prev_hash = entry_hash_for_chain(
+                prev_row["entry_data"] if isinstance(prev_row["entry_data"], bytes) else b"",
+                str(prev_row.get("signature") or ""),
+            )
             seq = int(prev_row.get("sequence_number") or prev_row.get("id") or 0) + 1
         else:
             prev_hash = "0" * 64

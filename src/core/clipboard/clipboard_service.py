@@ -1,41 +1,38 @@
-# единая точка работы с буфером обмена
-
+# единая точка работы с буфером обмена; таймер только в StateManager
 
 import secrets
 import threading
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
 from core import events
 from core import config
 from core.state_manager import get_state_manager
 from .platform_adapter import ClipboardAdapter
+from .secure_buffer import digest_text, wipe_bytearray
 
 
 @dataclass
-class SecureClipboardItem:
-    # одна запись в "безопасном" буфере
-    data: str
+class _ActiveClip:
     data_type: str
     source_entry_id: Optional[int]
-    copied_at: datetime
-    mask: bytes
-    obfuscated_data: bytes
+    content_digest: str
+    mask: bytes = field(default_factory=bytes)
+    obfuscated: bytes = field(default_factory=bytes)
 
     def secure_wipe(self):
-        # обнуляем строку и маску
-        self.data = ""
-        self.obfuscated_data = b""
+        self.content_digest = ""
+        if self.mask:
+            m = bytearray(self.mask)
+            wipe_bytearray(m)
         self.mask = b""
+        self.obfuscated = b""
 
 
 class ClipboardService:
     def __init__(self, platform_adapter: ClipboardAdapter):
-        # platform_adapter — абстракция над реальным буфером
         self._platform = platform_adapter
-        self._current: Optional[SecureClipboardItem] = None
-        self._timer: Optional[threading.Timer] = None
+        self._current: Optional[_ActiveClip] = None
         self._lock = threading.RLock()
         self._observers: List[Callable[[Dict], None]] = []
 
@@ -44,7 +41,6 @@ class ClipboardService:
         return self._platform
 
     def subscribe(self, callback: Callable[[Dict], None]):
-        # GUI или другие слои могут подписаться на обновление статуса clipboard
         with self._lock:
             self._observers.append(callback)
 
@@ -54,153 +50,94 @@ class ClipboardService:
             try:
                 cb(status)
             except Exception:
-                # не роняем сервис из-за UI
                 continue
 
     def copy_text(self, data: str, data_type: str = "text", source_entry_id: Optional[int] = None):
-        # скопировать строку в системный буфер обмена с авто-очисткой
         with self._lock:
-            # при новом содержимом старое очищается
-            self._clear_internal(reason="replace")
-
+            self._clear_internal(reason="replace", publish=False)
             plain_data = data or ""
             mask = secrets.token_bytes(32)
-            obfuscated = self._obfuscate_bytes(plain_data, mask)
-            item = SecureClipboardItem(
-                data=plain_data,
+            item = _ActiveClip(
                 data_type=data_type,
                 source_entry_id=source_entry_id,
-                copied_at=datetime.now(timezone.utc),
+                content_digest=digest_text(plain_data),
                 mask=mask,
-                obfuscated_data=obfuscated,
+                obfuscated=self._obfuscate_bytes(plain_data, mask),
             )
-
-            # в системный буфер кладём plaintext, а в памяти держим обфусцированную копию
             ok = self._platform.copy_to_clipboard(plain_data)
             if not ok:
+                item.secure_wipe()
                 return
-
             self._current = item
-
-            # таймер из настроек (config CLIPBOARD_TIMEOUT, диапазон 5–300)
-            timeout = int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30")
-            if timeout < 5:
-                timeout = 5
-            if timeout > 300:
-                timeout = 300
-
-            # сохраняем таймаут в state_manager для статус-бара
             sm = get_state_manager()
-            sm.set_clipboard_timeout(timeout)
+            sm.set_clipboard_timeout(self._clip_timeout())
             sm.reset_clipboard_timer()
-
-            # запускаем отдельный таймер авто-очистки
-            self._timer = threading.Timer(timeout, self._on_timeout)
-            self._timer.daemon = True
-            self._timer.start()
-
-            # событие ClipboardCopied
             events.publish(
                 events.ClipboardCopied,
                 sync=True,
                 entry_id=source_entry_id,
                 kind=data_type,
             )
-
             self._notify_observers()
 
     def clear(self, reason: str = "manual"):
-        # явная очистка
         with self._lock:
             self._clear_internal(reason=reason)
 
     def get_status(self) -> Dict:
-        # текущее состояние для UI
         with self._lock:
             if not self._current:
-                return {"active": False}
-
-            remaining = self._remaining_time()
+                return {"active": False, "staged": False}
+            sm = get_state_manager()
+            left = sm.get_clipboard_seconds_left()
             return {
                 "active": True,
+                "staged": False,
                 "data_type": self._current.data_type,
-                "remaining_seconds": max(0, int(remaining)) if remaining is not None else 0,
+                "remaining_seconds": left,
                 "source_entry_id": self._current.source_entry_id,
             }
 
-    def _on_timeout(self):
-        # очистка при истечении таймера
-        with self._lock:
-            self._clear_internal(reason="timeout")
-
-    def _remaining_time(self) -> Optional[float]:
-        if not self._current:
-            return None
-        timeout = int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30")
-        if timeout < 0:
-            return None
-        delta = datetime.now(timezone.utc) - self._current.copied_at
-        remain = timeout - delta.total_seconds()
-        return remain
-
     def clear_if_active_data_replaced(self):
-        # если буфер изменился вне приложения — очищаем внутреннее состояние
         with self._lock:
             if not self._current:
                 return
             content = self._platform.get_clipboard_content()
             if content is None:
                 return
-            if content != self._current.data:
+            if digest_text(content) != self._current.content_digest:
                 self._clear_internal(reason="external_change")
 
-    def _clear_internal(self, reason: str):
-        # останавливаем таймер
-        if self._timer:
-            try:
-                self._timer.cancel()
-            except Exception:
-                pass
-            self._timer = None
+    def _clear_internal(self, reason: str, publish: bool = True):
+        had_secret = self._current is not None
 
-        # очищаем системный буфер и память
         if self._current:
+            self._current.secure_wipe()
+            self._current = None
+
+        if had_secret or reason in ("manual", "timer_tick", "vault_lock", "app_close", "external_change"):
             try:
                 self._platform.clear_clipboard()
             except Exception:
                 pass
-            # QClipboard только из GUI-потока; таймер threading.Timer вызывает нас из фона — иначе падение на Windows
-            try:
-                if threading.current_thread() is threading.main_thread():
-                    from PyQt6.QtWidgets import QApplication
-
-                    app = QApplication.instance()
-                    if app is not None:
-                        app.clipboard().clear()
-            except Exception:
-                pass
-
-            self._current.secure_wipe()
-            self._current = None
-
-            # сбрасываем таймер в state_manager
             sm = get_state_manager()
-            sm.set_clipboard_timeout(int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30"))
-            # при очистке считаем, что в буфере уже нет секрета
-            sm.reset_clipboard_timer()
-
-            # событие ClipboardCleared
-            events.publish(
-                events.ClipboardCleared,
-                sync=True,
-                reason=reason,
-            )
+            sm.clear_clipboard_timer()
+            if publish and had_secret:
+                events.publish(events.ClipboardCleared, sync=True, reason=reason)
 
         self._notify_observers()
 
     @staticmethod
+    def _clip_timeout() -> int:
+        timeout = int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30")
+        if timeout < 5:
+            timeout = 5
+        if timeout > 300:
+            timeout = 300
+        return timeout
+
+    @staticmethod
     def _obfuscate_bytes(data: str, mask: bytes) -> bytes:
-        # простая XOR-обфускация в памяти
         raw = (data or "").encode("utf-8")
         if not raw or not mask:
             return b""
@@ -208,4 +145,3 @@ class ClipboardService:
         for i, b in enumerate(raw):
             out[i] = b ^ mask[i % len(mask)]
         return bytes(out)
-

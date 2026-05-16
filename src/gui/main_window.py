@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         self._password_widgets: Dict[int, Tuple[QLabel, QPushButton]] = {}
         self._global_show_passwords = False
 
-        # (спринт4) сервис буфера обмена: авто-очистка, события, Observer
+        # (спринт4) сервис буфера обмена; очистка по таймеру GUI — один раз, из главного потока
         self._clipboard_service = ClipboardService(create_platform_adapter())
         self._clipboard_service.subscribe(self._on_clipboard_status_changed)
         self._clipboard_monitor = ClipboardMonitor(self._clipboard_service.adapter)
@@ -155,16 +155,9 @@ class MainWindow(QMainWindow):
         sm.tick_clipboard_timer()
         left = sm.get_clipboard_seconds_left()
         self._buffer_label.setText(t("buffer_timer") % str(left))
-        if prev == 1 and left == 0:
+        if prev == 1 and left == 0 and self._clipboard_service.get_status().get("active"):
             try:
                 self._clipboard_service.clear(reason="timer_tick")
-            except Exception:
-                pass
-            # дублируем очистку Qt-буфера в GUI-потоке (фоновый threading.Timer уже мог снять секрет в сервисе)
-            try:
-                app = QApplication.instance()
-                if app is not None:
-                    app.clipboard().clear()
             except Exception:
                 pass
         if left == 5 and self._clipboard_service.get_status().get("active"):
@@ -594,15 +587,11 @@ class MainWindow(QMainWindow):
             self._show_error()
 
     def _copy_to_clipboard(self, entry_id, text, kind):
-        # текст копируется через ClipboardService (спринт4), таймер/события обрабатываются внутри сервиса
-        if not text:
-            return
-        # vault должен быть разблокирован (SEC-4), проверяем state_manager
         if get_state_manager().is_locked():
             QMessageBox.warning(self, t("app_title"), t("error_generic"))
             return
-        data_type = "password" if kind == "password" else "username"
-        self._clipboard_service.copy_text(text, data_type=data_type, source_entry_id=entry_id)
+        data_type = {"password": "password", "all": "all", "login": "username"}.get(kind, "text")
+        self._clipboard_service.copy_text(text or "", data_type=data_type, source_entry_id=entry_id)
 
     def _copy_selected_login(self, entry_id: int):
         get_state_manager().touch_activity()
@@ -712,10 +701,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(t("clipboard_cleared_status"), 1500)
             return
         data_type = status.get("data_type", "text")
-        left = status.get("remaining_seconds", 0)
         source = status.get("source_entry_id")
         source_label = str(source) if source is not None else t("clipboard_source_unknown")
-        self._clipboard_status_label.setText(t("clipboard_copied_status") % (data_type, str(left)))
+        self._clipboard_status_label.setText(t("clipboard_copied_type") % data_type)
         self.statusBar().showMessage(t("clipboard_preview_hidden") % (data_type, source_label), 1500)
 
     def _on_external_clipboard_change(self, _new_value: str):

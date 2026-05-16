@@ -6,6 +6,7 @@ import threading
 import queue
 import time
 from datetime import datetime
+from typing import Optional
 
 from . import models
 
@@ -305,12 +306,88 @@ def get_audit_tail():
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, signature, details, COALESCE(sequence_number, id) FROM audit_log ORDER BY id DESC LIMIT 1"
+            """SELECT id, signature, details, COALESCE(sequence_number, id), previous_hash, entry_data
+               FROM audit_log ORDER BY id DESC LIMIT 1"""
         )
         row = cur.fetchone()
         if not row:
             return None
-        return {"id": row[0], "signature": row[1], "details": row[2], "sequence_number": row[3]}
+        return {
+            "id": row[0],
+            "signature": row[1],
+            "details": row[2],
+            "sequence_number": row[3],
+            "previous_hash": row[4],
+            "entry_data": row[5],
+        }
+
+    return _with_connection(apply)
+
+
+def list_audit_logs(limit: int = 500, offset: int = 0, event_type: Optional[str] = None):
+    def apply(conn):
+        cur = conn.cursor()
+        if event_type:
+            cur.execute(
+                """SELECT id, action, timestamp, entry_id, details, signature,
+                          sequence_number, previous_hash, entry_data
+                   FROM audit_log WHERE action = ?
+                   ORDER BY COALESCE(sequence_number, id) DESC LIMIT ? OFFSET ?""",
+                (event_type, limit, offset),
+            )
+        else:
+            cur.execute(
+                """SELECT id, action, timestamp, entry_id, details, signature,
+                          sequence_number, previous_hash, entry_data
+                   FROM audit_log ORDER BY COALESCE(sequence_number, id) DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "id": r[0],
+                    "action": r[1],
+                    "timestamp": r[2],
+                    "entry_id": r[3],
+                    "details": r[4],
+                    "signature": r[5],
+                    "sequence_number": r[6],
+                    "previous_hash": r[7],
+                    "entry_data": r[8],
+                }
+            )
+        return out
+
+    return _with_connection(apply)
+
+
+def count_audit_logs():
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM audit_log")
+        return int(cur.fetchone()[0])
+
+    return _with_connection(apply)
+
+
+def prune_audit_logs(max_entries: int):
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM audit_log")
+        total = int(cur.fetchone()[0])
+        if total <= max_entries:
+            return 0
+        to_remove = total - max_entries
+        cur.execute(
+            """DELETE FROM audit_log WHERE id IN (
+                SELECT id FROM audit_log ORDER BY id ASC LIMIT ?
+            )""",
+            (to_remove,),
+        )
+        conn.commit()
+        return to_remove
 
     return _with_connection(apply)
 

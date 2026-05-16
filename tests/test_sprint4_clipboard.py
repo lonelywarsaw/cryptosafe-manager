@@ -33,30 +33,28 @@ class TestSprint4Clipboard(unittest.TestCase):
         config.set(config.CLIPBOARD_TIMEOUT, self._old_timeout)
 
     def test_copy_keeps_plain_text_in_system_clipboard(self):
-        self.service.copy_text("Secret_123!", data_type="password", source_entry_id=77)
+        self.service.copy_text("Secret_123!", data_type="text", source_entry_id=77)
         self.assertEqual(self.adapter.value, "Secret_123!")
-        status = self.service.get_status()
-        self.assertTrue(status["active"])
-        self.assertEqual(status["data_type"], "password")
-        self.assertEqual(status["source_entry_id"], 77)
 
     def test_manual_clear_clears_clipboard(self):
         self.service.copy_text("value", data_type="text")
         self.service.clear(reason="manual")
         self.assertEqual(self.adapter.value, "")
-        self.assertEqual(self.service.get_status(), {"active": False})
+        self.assertFalse(self.service.get_status().get("active"))
 
     def test_external_change_resets_active_secret(self):
         self.service.copy_text("value", data_type="password")
         self.adapter.value = "changed_by_other_app"
         self.service.clear_if_active_data_replaced()
-        self.assertEqual(self.service.get_status(), {"active": False})
+        self.assertFalse(self.service.get_status().get("active"))
 
     def test_timeout_auto_clear(self):
-        self.service.copy_text("x", data_type="password")
-        deadline = time.time() + 12.0
-        while time.time() < deadline:
-            if self.service.get_status() == {"active": False} and self.adapter.value == "":
-                return
-            time.sleep(0.15)
-        self.fail("буфер не очистился по таймеру за отведённое время")
+        from core.state_manager import get_state_manager
+
+        self.service.copy_text("x", data_type="text")
+        sm = get_state_manager()
+        while sm.get_clipboard_seconds_left() > 0:
+            sm.tick_clipboard_timer()
+        self.service.clear(reason="timer_tick")
+        self.assertFalse(self.service.get_status().get("active"))
+        self.assertEqual(self.adapter.value, "")

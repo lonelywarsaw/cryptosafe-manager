@@ -39,6 +39,11 @@ class StateManager:
         self._clipboard_seconds_left = self._clipboard_timeout_sec
         self._clipboard_has_content = True
 
+    def clear_clipboard_timer(self):
+        # единственный счётчик буфера: обнуляется после очистки
+        self._clipboard_seconds_left = 0
+        self._clipboard_has_content = False
+
     def tick_clipboard_timer(self):
         # вызывать раз в секунду: счётчик уменьшается на 1
         if self._clipboard_seconds_left > 0:
