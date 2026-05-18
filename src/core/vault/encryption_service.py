@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -82,6 +83,6 @@ class EncryptionServiceAESGCM:
 
     @staticmethod
     def now_timestamp() -> str:
-        # Везде используем простой timestamp как string (совместимо с существующим db.py)
-        return str(int(time.time()))
+        # created_at внутри payload храним в том же формате, что и в БД: YYYY-MM-DD
+        return datetime.now().strftime("%Y-%m-%d")
 

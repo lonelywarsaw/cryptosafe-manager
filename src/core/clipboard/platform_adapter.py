@@ -3,8 +3,6 @@ import platform
 import subprocess
 from typing import Optional
 
-from PyQt6.QtWidgets import QApplication
-
 
 class ClipboardAdapter(ABC):
     @abstractmethod
@@ -22,6 +20,10 @@ class ClipboardAdapter(ABC):
 
 class QtClipboardAdapter(ClipboardAdapter):
     def _clip(self):
+        try:
+            from PyQt6.QtWidgets import QApplication
+        except ImportError:
+            return None
         app = QApplication.instance()
         if not app:
             return None

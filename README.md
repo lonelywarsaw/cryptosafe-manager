@@ -150,7 +150,7 @@ crypto/
 
 1. Перейти в каталог проекта: `cd crypto`
 2. Создать виртуальное окружение: `python -m venv .venv`
-3. Активировать: Windows — `.venv\Scripts\Activate.ps1`, Linux/macOS — `source .venv/bin/activate`
+3. Активировать: Windows — `.venv\Scripts\Activate.ps1`
 4. Установить зависимости: `pip install -r requirements.txt`
 5. Запуск приложения: `python -m src.main`
 6. Тесты: из корня проекта `pytest tests/` (conftest подставляет src в путь)

@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+from datetime import datetime
 from urllib.parse import urlparse
 
 from core.vault.encryption_service import EncryptionServiceAESGCM
@@ -24,6 +25,17 @@ def _extract_domain(url: str) -> str:
         u = "https://" + u
     parsed = urlparse(u)
     return parsed.netloc or u
+
+
+def _format_date_from_ts(ts_value) -> str:
+    # updated_at/created_at в БД хранится как unix timestamp (секунды)
+    try:
+        ts = int(ts_value)
+        if ts <= 0:
+            return ""
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+    except Exception:
+        return str(ts_value or "")
 
 
 class EntryManager:
@@ -72,7 +84,7 @@ class EntryManager:
             "category": payload.get("category", ""),
             "version": payload.get("version", 1),
             "created_at": created_at or payload.get("created_at"),
-            "updated_at": updated_at,
+            "updated_at": _format_date_from_ts(updated_at),
             "tags": tags or "",
         }
 
@@ -92,7 +104,7 @@ class EntryManager:
                     "url_domain": _extract_domain(payload.get("url", "")),
                     "url": payload.get("url", ""),
                     "notes": payload.get("notes", ""),
-                    "updated_at": updated_at,
+                    "updated_at": _format_date_from_ts(updated_at),
                     "tags": tags or payload.get("category", ""),
                 }
             )
