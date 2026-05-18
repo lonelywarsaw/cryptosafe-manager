@@ -53,6 +53,16 @@ def verify_password(stored_hash: str, password: str) -> bool:
     return verify_password_argon2(stored_hash, password)
 
 
+def verify_master_password(password: str) -> bool:
+    from database import db as database_db
+
+    auth_blob = database_db.get_key_store("auth_hash")
+    if not auth_blob:
+        return False
+    stored_hash = auth_blob.decode("utf-8")
+    return verify_password(stored_hash, password)
+
+
 def record_login_success():
     # после успешного входа запоминается время входа, активность и обнуляется счётчик ошибок
     global _login_timestamp, _last_activity_timestamp, _failed_attempt_count

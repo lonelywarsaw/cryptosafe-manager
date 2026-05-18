@@ -13,6 +13,9 @@ UserLoggedIn = "UserLoggedIn"
 UserLoggedOut = "UserLoggedOut"
 ClipboardCopied = "ClipboardCopied"
 ClipboardCleared = "ClipboardCleared"
+VaultExported = "VaultExported"
+VaultImported = "VaultImported"
+EntryShared = "EntryShared"
 
 # словарь: тип события → список callback-функций
 _subscribers = {}

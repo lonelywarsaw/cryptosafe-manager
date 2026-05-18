@@ -123,3 +123,21 @@ def register():
         events.ClipboardCleared,
         lambda **kw: _log_event(events.ClipboardCleared, details=f"reason={kw.get('reason')}"),
     )
+    events.subscribe(
+        events.VaultExported,
+        lambda **kw: _log_event(
+            events.VaultExported,
+            details=f"format={kw.get('format')} count={kw.get('entry_count')}",
+        ),
+    )
+    events.subscribe(
+        events.VaultImported,
+        lambda **kw: _log_event(
+            events.VaultImported,
+            details=f"mode={kw.get('mode')} added={kw.get('added')}",
+        ),
+    )
+    events.subscribe(
+        events.EntryShared,
+        lambda **kw: _log_event(events.EntryShared, details=f"permission={kw.get('permission')}"),
+    )
