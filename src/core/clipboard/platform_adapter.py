@@ -154,3 +154,23 @@ def create_platform_adapter() -> ClipboardAdapter:
         if adapter._win32clipboard is not None:
             return adapter
     return QtClipboardAdapter()
+
+class FakeClipboardAdapter(ClipboardAdapter):
+
+    def init(self):
+        self.clear_called = False
+        self.last_copied = None
+        self._content = None
+
+    def copy_to_clipboard(self, data: str) -> bool:
+        self.last_copied = data
+        self._content = data
+        return True
+
+    def clear_clipboard(self) -> bool:
+        self.clear_called = True
+        self._content = None
+        return True
+
+    def get_clipboard_content(self) -> Optional[str]:
+        return self._content
