@@ -167,6 +167,33 @@ class TestClipboardCrossPlatformCompatibility(unittest.TestCase):
             self.assertEqual(type(adapter).__name__, "QtClipboardAdapter")
 
 
+@unittest.skipUnless(sys.platform == "win32", "Win32 clipboard test — только Windows")
+class TestClipboardWin32Clipboard(unittest.TestCase):
+    """Доп. проверка: реальный win32clipboard путь """
+
+    @patch("core.clipboard.clipboard_service.get_state_manager")
+    def test_copy_and_clear_with_win32clipboard(self, mock_sm) -> None:
+        mock_sm.return_value = MagicMock()
+        try:
+            import win32clipboard  # type: ignore
+        except Exception:
+            self.skipTest("pywin32 не установлен (win32clipboard недоступен)")
+
+        adapter = create_platform_adapter()
+        if type(adapter).__name__ != "WindowsClipboardAdapter":
+            self.skipTest("WindowsClipboardAdapter не активирован")
+
+        token = f"WIN32_TEST_{secrets.token_hex(8)}"
+        self.assertTrue(adapter.copy_to_clipboard(token))
+        got = adapter.get_clipboard_content()
+        self.assertEqual(got, token)
+
+        self.assertTrue(adapter.clear_clipboard())
+        # после clear допускаем пустую строку или None (зависит от адаптера/Qt)
+        got2 = adapter.get_clipboard_content()
+        self.assertTrue(got2 is None or got2 == "")
+
+
 @unittest.skipUnless(sys.platform == "win32", "TEST-3: Win32 MiniDump — только Windows")
 class TestClipboardMemorySecurity(unittest.TestCase):
     """TEST-3: безопасность памяти через Win32 API"""
