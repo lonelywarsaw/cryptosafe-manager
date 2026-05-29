@@ -2,10 +2,13 @@
 
 import json
 import secrets
+import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from core import events
+from database import db as database_db
 
 from .export_crypto import SHARE_INFO, decrypt_blob, derive_export_material, encrypt_blob, integrity_digest, verify_integrity
 from .formats.json_format import derive_key_from_export_password
@@ -65,6 +68,26 @@ class SharingService:
             "ciphertext": _b64(ciphertext),
             "integrity": {"hmac": integrity_digest(raw, data_key)},
         }
+        share_id = str(uuid.uuid4())
+        package["share_id"] = share_id
+        database_db.insert_shared_entry(
+            shared_id=share_id,
+            original_entry_id=entry.get("id"),
+            encryption_method="password",
+            recipient_info="password-recipient",
+            permissions=permission,
+            expires_at=expires_at,
+        )
+        payload = json.dumps(package, ensure_ascii=False).encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="share",
+            format=SHARE_FORMAT,
+            encryption_used="password",
+            entry_count=1,
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
         events.publish(events.EntryShared, sync=True, permission=permission, expires_days=expires_days)
         return package
 
@@ -97,6 +120,26 @@ class SharingService:
             "ciphertext": _b64(ciphertext),
             "integrity": {"hmac": integrity_digest(raw, data_key)},
         }
+        share_id = str(uuid.uuid4())
+        package["share_id"] = share_id
+        database_db.insert_shared_entry(
+            shared_id=share_id,
+            original_entry_id=entry.get("id"),
+            encryption_method="rsa-oaep",
+            recipient_info="public-key-recipient",
+            permissions=permission,
+            expires_at=expires_at,
+        )
+        payload = json.dumps(package, ensure_ascii=False).encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="share",
+            format=SHARE_FORMAT,
+            encryption_used="rsa-oaep",
+            entry_count=1,
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
         events.publish(events.EntryShared, sync=True, permission=permission, delivery="public_key")
         return package
 

@@ -2,8 +2,9 @@
 
 import hashlib
 import json
+import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from core import events
 from core.key_manager import get_encryption_key
@@ -51,6 +52,16 @@ def _build_payload(
     return json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
 
 
+def _schedule_log(event_type: str, entry_id=None, details=None) -> None:
+    # PERF-5: некритичные события пишутся в фоне, publish/sync не блокируется
+    threading.Thread(
+        target=_log_event,
+        args=(event_type,),
+        kwargs={"entry_id": entry_id, "details": details},
+        daemon=True,
+    ).start()
+
+
 def _log_event(event_type: str, entry_id=None, details=None):
     try:
         ek = get_encryption_key()
@@ -87,57 +98,36 @@ def _log_event(event_type: str, entry_id=None, details=None):
 
 
 def register():
-    events.subscribe(
-        events.EntryAdded,
-        lambda **kw: _log_event(events.EntryAdded, entry_id=kw.get("entry_id"), details=f"entry_id={kw.get('entry_id')}"),
-    )
-    events.subscribe(
-        events.EntryCreated,
-        lambda **kw: _log_event(events.EntryCreated, entry_id=kw.get("entry_id"), details=f"entry_id={kw.get('entry_id')}"),
-    )
-    events.subscribe(
-        events.EntryUpdated,
-        lambda **kw: _log_event(events.EntryUpdated, entry_id=kw.get("entry_id"), details=f"entry_id={kw.get('entry_id')}"),
-    )
-    events.subscribe(
-        events.EntryDeleted,
-        lambda **kw: _log_event(events.EntryDeleted, entry_id=kw.get("entry_id"), details=f"entry_id={kw.get('entry_id')}"),
-    )
-    events.subscribe(
-        events.UserLoggedIn,
-        lambda **kw: _log_event(events.UserLoggedIn, details=f"user={kw.get('username')}"),
-    )
-    events.subscribe(
-        events.UserLoggedOut,
-        lambda **kw: _log_event(events.UserLoggedOut, details="user_logged_out"),
-    )
-    events.subscribe(
+    def _sub(event_type: str, builder: Callable[..., str], *, async_log: bool = False):
+        def handler(**kw):
+            details = builder(kw)
+            if async_log:
+                _schedule_log(event_type, entry_id=kw.get("entry_id"), details=details)
+            else:
+                _log_event(event_type, entry_id=kw.get("entry_id"), details=details)
+
+        events.subscribe(event_type, handler)
+
+    _sub(events.EntryAdded, lambda kw: f"entry_id={kw.get('entry_id')}")
+    _sub(events.EntryCreated, lambda kw: f"entry_id={kw.get('entry_id')}")
+    _sub(events.EntryUpdated, lambda kw: f"entry_id={kw.get('entry_id')}")
+    _sub(events.EntryDeleted, lambda kw: f"entry_id={kw.get('entry_id')}")
+    _sub(events.UserLoggedIn, lambda kw: f"user={kw.get('username')}")
+    _sub(events.UserLoggedOut, lambda kw: "user_logged_out")
+    _sub(
         events.ClipboardCopied,
-        lambda **kw: _log_event(
-            events.ClipboardCopied,
-            entry_id=kw.get("entry_id"),
-            details=f"kind={kw.get('kind')}",
-        ),
+        lambda kw: f"kind={kw.get('kind')}",
+        async_log=True,
     )
-    events.subscribe(
-        events.ClipboardCleared,
-        lambda **kw: _log_event(events.ClipboardCleared, details=f"reason={kw.get('reason')}"),
-    )
-    events.subscribe(
+    _sub(events.ClipboardCleared, lambda kw: f"reason={kw.get('reason')}", async_log=True)
+    _sub(
         events.VaultExported,
-        lambda **kw: _log_event(
-            events.VaultExported,
-            details=f"format={kw.get('format')} count={kw.get('entry_count')}",
-        ),
+        lambda kw: f"format={kw.get('format')} count={kw.get('entry_count')}",
+        async_log=True,
     )
-    events.subscribe(
+    _sub(
         events.VaultImported,
-        lambda **kw: _log_event(
-            events.VaultImported,
-            details=f"mode={kw.get('mode')} added={kw.get('added')}",
-        ),
+        lambda kw: f"mode={kw.get('mode')} added={kw.get('added')}",
+        async_log=True,
     )
-    events.subscribe(
-        events.EntryShared,
-        lambda **kw: _log_event(events.EntryShared, details=f"permission={kw.get('permission')}"),
-    )
+    _sub(events.EntryShared, lambda kw: f"permission={kw.get('permission')}", async_log=True)

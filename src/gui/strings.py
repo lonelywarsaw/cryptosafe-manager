@@ -80,6 +80,10 @@ STRINGS = {
         "audit_col_entry": "Запись",
         "audit_tamper_title": "Журнал аудита",
         "audit_tamper_message": "Обнаружено возможное изменение журнала аудита. Проверьте раздел «Журнал».",
+        "s6_export": "Экспорт хранилища",
+        "s6_import": "Импорт в хранилище",
+        "s6_share": "Поделиться записью",
+        "s6_qr_viewer": "QR просмотрщик",
     },
     "en": {
         "app_title": "CryptoSafe Manager",
@@ -155,6 +159,10 @@ STRINGS = {
         "audit_col_entry": "Entry",
         "audit_tamper_title": "Audit log",
         "audit_tamper_message": "Possible audit log tampering detected. Open Logs to review.",
+        "s6_export": "Export vault",
+        "s6_import": "Import to vault",
+        "s6_share": "Share entry",
+        "s6_qr_viewer": "QR viewer",
     },
 }
 

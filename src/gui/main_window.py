@@ -24,6 +24,8 @@ from core.clipboard.clipboard_monitor import ClipboardMonitor
 from core.clipboard.platform_adapter import create_platform_adapter
 from .strings import t
 from .widgets.secure_table import SecureTable
+from .import_export_dialogs import ExportDialog, ImportDialog, ShareDialog, QRViewerDialog
+from core.import_export.importer import VaultImporter
 
 
 class MainWindow(QMainWindow):
@@ -110,6 +112,10 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu(t("file"))
         file_menu.addAction(t("new"), self._on_new)
         file_menu.addAction(t("open"), self._on_open)
+        file_menu.addAction(t("s6_export"), self._on_export_vault)
+        file_menu.addAction(t("s6_import"), self._on_import_vault)
+        file_menu.addAction(t("s6_share"), self._on_share_entry)
+        file_menu.addAction(t("s6_qr_viewer"), self._on_qr_viewer)
         file_menu.addAction(t("unlock"), self._on_unlock)
         file_menu.addAction(t("backup"), self._on_backup)
         file_menu.addSeparator()
@@ -671,6 +677,60 @@ class MainWindow(QMainWindow):
             self._buffer_seconds = int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30")
             get_state_manager().set_clipboard_timeout(self._buffer_seconds)
             self._apply_theme_and_language()
+
+    def _selected_entry_ids(self) -> List[int]:
+        selected_ids = set()
+        sm = self._table.selectionModel()
+        if sm is not None:
+            for idx in sm.selectedRows():
+                item = self._table.item(idx.row(), 0)
+                if item:
+                    eid = item.data(Qt.ItemDataRole.UserRole)
+                    if eid is not None:
+                        selected_ids.add(int(eid))
+        return list(selected_ids)
+
+    def _on_export_vault(self):
+        get_state_manager().touch_activity()
+        dlg = ExportDialog(self, lambda: [self._entry_manager.get_entry(r["id"]) for r in self._all_entries_cache], self._selected_entry_ids())
+        dlg.exec()
+
+    def _on_import_vault(self):
+        get_state_manager().touch_activity()
+
+        def _create(entry_data):
+            return self._entry_manager.create_entry(entry_data)
+
+        def _list():
+            return self._entry_manager.get_all_entries()
+
+        def _delete_all():
+            rows = database_db.get_all_vault_entries()
+            for row in rows:
+                database_db.delete_vault_entry(int(row[0]))
+
+        importer = VaultImporter(create_entry=_create, list_entries=_list, delete_all=_delete_all)
+        dlg = ImportDialog(self, importer)
+        if dlg.exec():
+            self._load_table()
+
+    def _on_share_entry(self):
+        get_state_manager().touch_activity()
+        entry_id = self._get_selected_entry_id()
+        if entry_id is None:
+            QMessageBox.information(self, t("s6_share"), t("select_entry_edit"))
+            return
+
+        def _provider():
+            return self._entry_manager.get_entry(entry_id)
+
+        dlg = ShareDialog(self, _provider)
+        dlg.exec()
+
+    def _on_qr_viewer(self):
+        get_state_manager().touch_activity()
+        dlg = QRViewerDialog(self)
+        dlg.exec()
 
     def _apply_theme_and_language(self):
         from .theme import apply_theme

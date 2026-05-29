@@ -4,16 +4,19 @@ import json
 import os
 import secrets
 import tempfile
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core import events
 from core.crypto.authentication import verify_master_password
+from database import db as database_db
 
 from .export_crypto import derive_export_material
 from .formats.bitwarden_format import entries_to_bitwarden
 from .formats.csv_format import entries_to_csv
-from .formats.json_format import build_encrypted_export
+from .formats.json_format import build_encrypted_export, build_external_encrypted_export
+from .formats.lastpass_format import entries_to_lastpass_csv
 
 
 class ExportOptions:
@@ -49,10 +52,10 @@ class VaultExporter:
         self,
         export_password: str,
         *,
-        master_password: Optional[str] = None,
+        master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> Dict[str, Any]:
-        if master_password is not None and not verify_master_password(master_password):
+        if not master_password or not verify_master_password(master_password):
             raise PermissionError("Неверный мастер-пароль")
         options = options or ExportOptions()
         if options.key_bits not in (128, 256):
@@ -75,6 +78,16 @@ class VaultExporter:
             entry_count=len(entries),
             selective=bool(options.entry_ids),
         )
+        payload = json.dumps(package, ensure_ascii=False).encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="encrypted_json",
+            encryption_used=package.get("kdf", {}).get("mode", "password"),
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
         return package
 
     def write_encrypted_json_file(
@@ -82,7 +95,7 @@ class VaultExporter:
         path: str,
         export_password: str,
         *,
-        master_password: Optional[str] = None,
+        master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> str:
         package = self.export_encrypted_json(
@@ -93,26 +106,139 @@ class VaultExporter:
         return self._write_temp_json(path, package)
 
     def export_csv(self, *, encrypt: bool = False, export_password: str = "", options: Optional[ExportOptions] = None) -> str:
+        # NOTE: plaintext CSV допускается для миграции (EXP-1), но по умолчанию предпочитается Encrypted JSON
         options = options or ExportOptions()
         entries = self._select_entries(options)
         text = entries_to_csv(entries)
         if encrypt:
             if not export_password:
                 raise ValueError("Нужен пароль для шифрования CSV")
-            pkg = build_encrypted_export(
-                [{"title": "csv-export", "username": "", "password": "", "url": "", "notes": text, "category": ""}],
-                export_password,
-                include_notes=True,
+            pkg = build_external_encrypted_export(
+                external_format="csv",
+                external_text=text,
+                export_password=export_password,
             )
-            return json.dumps(pkg, ensure_ascii=False)
+            payload = json.dumps(pkg, ensure_ascii=False).encode("utf-8")
+            database_db.insert_import_export_history(
+                operation_type="export",
+                format="csv_encrypted_json",
+                encryption_used=pkg.get("kdf", {}).get("mode", "password"),
+                entry_count=len(entries),
+                file_size=len(payload),
+                checksum=hashlib.sha256(payload).hexdigest(),
+                verification_status="ok",
+            )
+            return json.dumps(pkg, ensure_ascii=False, indent=2)
         events.publish(events.VaultExported, sync=True, format="csv", entry_count=len(entries), selective=bool(options.entry_ids))
+        payload = text.encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="csv",
+            encryption_used="none",
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
         return text
 
     def export_bitwarden(self, options: Optional[ExportOptions] = None) -> str:
         options = options or ExportOptions()
         entries = self._select_entries(options)
         events.publish(events.VaultExported, sync=True, format="bitwarden", entry_count=len(entries), selective=bool(options.entry_ids))
-        return entries_to_bitwarden(entries)
+        text = entries_to_bitwarden(entries)
+        payload = text.encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="bitwarden_json",
+            encryption_used="none",
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
+        return text
+
+    def export_bitwarden_encrypted_json(
+        self,
+        export_password: str,
+        *,
+        master_password: str,
+        options: Optional[ExportOptions] = None,
+    ) -> Dict[str, Any]:
+        if not master_password or not verify_master_password(master_password):
+            raise PermissionError("Неверный мастер-пароль")
+        options = options or ExportOptions()
+        entries = self._select_entries(options)
+        bitwarden_text = entries_to_bitwarden(entries)
+        pkg = build_external_encrypted_export(
+            external_format="bitwarden",
+            external_text=bitwarden_text,
+            export_password=export_password,
+            compress=options.compress,
+            recipient_public_key_pem=options.recipient_public_key_pem,
+        )
+        events.publish(events.VaultExported, sync=True, format="bitwarden_encrypted_json", entry_count=len(entries), selective=bool(options.entry_ids))
+        payload = json.dumps(pkg, ensure_ascii=False).encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="bitwarden_encrypted_json",
+            encryption_used=pkg.get("kdf", {}).get("mode", "password"),
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
+        return pkg
+
+    def export_lastpass_csv(self, options: Optional[ExportOptions] = None) -> str:
+        options = options or ExportOptions()
+        entries = self._select_entries(options)
+        events.publish(events.VaultExported, sync=True, format="lastpass_csv", entry_count=len(entries), selective=bool(options.entry_ids))
+        text = entries_to_lastpass_csv(entries)
+        payload = text.encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="lastpass_csv",
+            encryption_used="none",
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
+        return text
+
+    def export_lastpass_encrypted_json(
+        self,
+        export_password: str,
+        *,
+        master_password: str,
+        options: Optional[ExportOptions] = None,
+    ) -> Dict[str, Any]:
+        if not master_password or not verify_master_password(master_password):
+            raise PermissionError("Неверный мастер-пароль")
+        options = options or ExportOptions()
+        entries = self._select_entries(options)
+        lastpass_text = entries_to_lastpass_csv(entries)
+        pkg = build_external_encrypted_export(
+            external_format="lastpass_csv",
+            external_text=lastpass_text,
+            export_password=export_password,
+            compress=options.compress,
+            recipient_public_key_pem=options.recipient_public_key_pem,
+        )
+        events.publish(events.VaultExported, sync=True, format="lastpass_encrypted_json", entry_count=len(entries), selective=bool(options.entry_ids))
+        payload = json.dumps(pkg, ensure_ascii=False).encode("utf-8")
+        database_db.insert_import_export_history(
+            operation_type="export",
+            format="lastpass_encrypted_json",
+            encryption_used=pkg.get("kdf", {}).get("mode", "password"),
+            entry_count=len(entries),
+            file_size=len(payload),
+            checksum=hashlib.sha256(payload).hexdigest(),
+            verification_status="ok",
+        )
+        return pkg
 
     @staticmethod
     def _write_temp_json(path: str, package: Dict[str, Any]) -> str:

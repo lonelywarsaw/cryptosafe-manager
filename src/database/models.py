@@ -1,7 +1,7 @@
 # описание схемы vault db: версия и список sql-команд для создания таблиц
 # таблицы создаются в db.init_db() при первом запуске
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DDL = [
     """CREATE TABLE IF NOT EXISTS vault_entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,4 +42,28 @@ DDL = [
         version INTEGER DEFAULT 1,
         created_at TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS shared_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shared_id TEXT UNIQUE,
+        original_entry_id INTEGER,
+        encryption_method TEXT,
+        recipient_info TEXT,
+        permissions TEXT,
+        shared_at TEXT,
+        expires_at TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_shared_entries_shared_at ON shared_entries(shared_at)",
+    "CREATE INDEX IF NOT EXISTS idx_shared_entries_expires_at ON shared_entries(expires_at)",
+    """CREATE TABLE IF NOT EXISTS import_export_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation_type TEXT,
+        format TEXT,
+        encryption_used TEXT,
+        entry_count INTEGER,
+        file_size INTEGER,
+        checksum TEXT,
+        verification_status TEXT,
+        created_at TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_ie_history_created_at ON import_export_history(created_at)",
 ]

@@ -6,6 +6,24 @@ from typing import Any, Dict, List
 
 LASTPASS_FIELDS = ("url", "username", "password", "extra", "name", "grouping", "fav")
 
+def entries_to_lastpass_csv(entries: List[Dict[str, Any]]) -> str:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=LASTPASS_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    for e in entries:
+        writer.writerow(
+            {
+                "url": e.get("url", "") or "",
+                "username": e.get("username", "") or "",
+                "password": e.get("password", "") or "",
+                "extra": e.get("notes", "") or "",
+                "name": e.get("title", "") or "",
+                "grouping": e.get("category", "") or "",
+                "fav": "0",
+            }
+        )
+    return buf.getvalue()
+
 
 def lastpass_to_entries(text: str) -> List[Dict[str, Any]]:
     buf = io.StringIO(text.strip())

@@ -3,10 +3,13 @@
 import json
 import re
 import time
+import hashlib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core import events
+from core.crypto.authentication import verify_master_password
+from database import db as database_db
 
 from .formats.bitwarden_format import bitwarden_to_entries
 from .formats.csv_format import csv_to_entries
@@ -61,10 +64,11 @@ def detect_format(text: str, path: Optional[str] = None) -> str:
             return "bitwarden"
         if data.get("format", "").startswith("cryptosafe-share"):
             return "share"
+    first_line = stripped.split("\n", 1)[0].lower()
+    if "url,username,password" in first_line:
+        return "lastpass_csv"
     if path and path.lower().endswith(".csv"):
         return "csv"
-    if "url,username,password" in stripped.split("\n", 1)[0].lower():
-        return "lastpass_csv"
     return "csv"
 
 
@@ -122,6 +126,7 @@ class VaultImporter:
         path: str,
         mode: str,
         *,
+        master_password: str,
         export_password: str = "",
         duplicate_policy: str = "skip",
         private_key_pem: Optional[str] = None,
@@ -129,6 +134,10 @@ class VaultImporter:
         # mode: merge | replace | dry_run
         if mode not in ("merge", "replace", "dry_run"):
             raise ValueError("mode должен быть merge, replace или dry_run")
+        if not master_password or not verify_master_password(master_password):
+            raise PermissionError("Неверный мастер-пароль")
+        p = Path(path)
+        raw = p.read_bytes()
         entries = self.parse_file(path, export_password=export_password, private_key_pem=private_key_pem)
         result = self._apply(entries, mode, duplicate_policy)
         if mode != "dry_run":
@@ -139,6 +148,15 @@ class VaultImporter:
                 added=len(result.added),
                 updated=len(result.updated),
             )
+        database_db.insert_import_export_history(
+            operation_type="import",
+            format=detect_format(raw.decode("utf-8", errors="replace"), str(p)),
+            encryption_used="unknown",
+            entry_count=len(entries),
+            file_size=len(raw),
+            checksum=hashlib.sha256(raw).hexdigest(),
+            verification_status="ok" if not result.errors else "errors",
+        )
         return result
 
     def _find_duplicate(self, entry: Dict[str, Any], existing: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

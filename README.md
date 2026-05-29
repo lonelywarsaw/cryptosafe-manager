@@ -175,6 +175,17 @@ crypto/
 
 ---
 
+### Отчёты по спринтам (что сделано)
+
+Подробные отчёты с привязкой к пунктам TRD лежат в `docs/sprint_reports/`:
+
+- `docs/sprint_reports/sprint1.md`
+- `docs/sprint_reports/sprint2.md`
+- `docs/sprint_reports/sprint3.md`
+- `docs/sprint_reports/sprint4.md`
+- `docs/sprint_reports/sprint5.md`
+- `docs/sprint_reports/sprint6.md`
+
 ### Спринт 1
 
 **Реализовано:** фундамент проекта — модульная архитектура, конфигурация, база данных, событийная система и базовый GUI.
@@ -316,26 +327,29 @@ crypto/
 
 ### Спринт 6
 
-**Реализовано (ядро, п. 1–5 TRD — Must):** импорт/экспорт, шаринг записей, обмен ключами и QR-кодек (без GUI §7 и БД §8).
+**Реализовано:** импорт/экспорт, шаринг, QR/key exchange, GUI, таблицы БД, тесты TEST/PERF.
 
 **Каталог `src/core/import_export/`:**
 
 | Компонент | TRD | Содержание |
 |-----------|-----|------------|
-| `exporter.py` | EXP | Полный и выборочный экспорт; подтверждение мастер-пароля; запись во временный файл с заменой |
-| `importer.py` | IMP | merge / replace / dry-run; лимит 10 MB и таймаут 30 с; санитизация полей |
-| `sharing_service.py` | SHR | Share-пакет по паролю или RSA-OAEP; срок 1–30 дней; read_only / editable |
-| `key_exchange.py` | QR-3 | RSA-2048, ECC P-256, отпечаток ключа, контакты в config |
-| `qr_codec.py` | QR-1–2 | HMAC-checksum, chunking, PNG через `qrcode` (опционально) |
-| `formats/` | EXP/IMP | Encrypted JSON, CSV, Bitwarden JSON, LastPass CSV |
+| `exporter.py` | EXP | Encrypted JSON, CSV, Bitwarden/LastPass (plain и encrypted), RSA-обёртка data_key |
+| `importer.py` | IMP | merge / replace / dry-run; лимит 10 MB и таймаут 30 с; санитизация |
+| `sharing_service.py` | SHR | Share по паролю или RSA-OAEP; срок 1–30 дней; read_only / editable |
+| `key_exchange.py` | QR-3 | RSA-2048, ECC P-256, fingerprint, контакты в config |
+| `qr_codec.py` | QR-1–2 | checksum, chunking, PNG (`qrcode`, опционально) |
+| `formats/` | EXP/IMP | json, csv, bitwarden, lastpass |
 
-- **ARC-2:** HKDF от мастер-ключа с отдельным `info` (`export` / `share`); на каждый экспорт — одноразовый `data_key`, обёрнутый паролем или публичным RSA.
-- **Encrypted JSON:** AES-256-GCM, метаданные приложения, SHA-256 + HMAC целостности.
-- **События и аудит:** `VaultExported`, `VaultImported`, `EntryShared` → журнал спринта 5.
+**GUI:** `src/gui/import_export_dialogs.py` — экспорт, импорт, share, QR viewer; пункты меню в `main_window.py`.
 
-**Тесты:** `tests/test_sprint6_import_export.py`.
+**БД (SCHEMA_VERSION 5):** `shared_entries`, `import_export_history`; миграция в `db.py`.
 
-**Планируется (следующие пункты TRD):** GUI мастера импорта/экспорта, QR-сканер с камеры, сетевые share-link, интеграция в меню главного окна.
+- Мастер-пароль обязателен при экспорте/импорте Encrypted JSON.
+- События `VaultExported`, `VaultImported`, `EntryShared` → аудит (спринт 5).
+
+**Тесты:** `tests/test_sprint6_import_export.py` (TEST-1..5), `tests/test_sprint6_perf.py` (PERF-1..4).
+
+**Планируется:** QR-сканер с камеры, сетевые share-link.
 
 ---
 

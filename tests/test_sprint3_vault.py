@@ -1,9 +1,9 @@
 # tests/test_sprint3_vault.py
 import os
 import tempfile
-import threading  # ✅ Добавлен импорт
+import threading
 import unittest
-import string      # ✅ Добавлен импорт
+import string
 import secrets
 
 import database.db as db
@@ -17,7 +17,7 @@ except Exception:
 
 
 class _FakeKeyManager:
-    def __init__(self, key: bytes):  # ✅ Исправлен __init__
+    def __init__(self, key: bytes):
         self._key = key
 
     def get_encryption_key(self):
@@ -45,7 +45,6 @@ class TestSprint3Vault(unittest.TestCase):
         db.set_db_path(self._db_path)
         db.init_db()
 
-        # ✅ Инициализируем manager как атрибут класса
         key = b"x" * 32
         km = _FakeKeyManager(key)
         ev = _FakeEvents()
@@ -63,7 +62,7 @@ class TestSprint3Vault(unittest.TestCase):
         # (TEST-2) CRUD через EntryManager: create/get/update/delete
         pwd = "Password_123!"
 
-        # ✅ ИСПРАВЛЕНО: Создаём локальный FakeEvents и manager внутри теста
+
         ev = _FakeEvents()
         key = b"x" * 32
         km = _FakeKeyManager(key)
@@ -105,7 +104,6 @@ class TestSprint3Vault(unittest.TestCase):
         manager.delete_entry(entry_id, soft_delete=True)
         self.assertIsNone(db.get_vault_entry(entry_id))
 
-        # ✅ ИСПРАВЛЕНО: ev определён в этом же методе, поэтому доступен
         event_types = [e[0] for e in ev.published]
         self.assertIn(_FakeEvents.EntryAdded, event_types)
         self.assertIn(_FakeEvents.EntryCreated, event_types)
@@ -180,7 +178,7 @@ class TestSprint3Vault(unittest.TestCase):
 
     # === TEST-4: Генератор 10k паролей, проверка уникальности и наборов символов ===
     def test_test4_password_generator_compliance(self):
-        # ✅ Исправлено: гарантируем наличие всех типов символов
+
         def gen_pwd(length=16):
             # Сначала гарантируем по одному символу из каждого набора
             chars = [

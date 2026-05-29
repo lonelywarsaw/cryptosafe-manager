@@ -148,6 +148,37 @@ def _ensure_audit_log_columns(cur):
     cur.execute("UPDATE audit_log SET sequence_number = id WHERE sequence_number IS NULL")
 
 
+def _ensure_sprint6_tables(cur):
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS shared_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shared_id TEXT UNIQUE,
+            original_entry_id INTEGER,
+            encryption_method TEXT,
+            recipient_info TEXT,
+            permissions TEXT,
+            shared_at TEXT,
+            expires_at TEXT
+        )"""
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_shared_entries_shared_at ON shared_entries(shared_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_shared_entries_expires_at ON shared_entries(expires_at)")
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS import_export_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operation_type TEXT,
+            format TEXT,
+            encryption_used TEXT,
+            entry_count INTEGER,
+            file_size INTEGER,
+            checksum TEXT,
+            verification_status TEXT,
+            created_at TEXT
+        )"""
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ie_history_created_at ON import_export_history(created_at)")
+
+
 def init_db():
     # таблицы создаются, если их ещё нет; user_version хранит версию схемы для миграций (спринт 2: миграция key_store)
     def apply(conn):
@@ -223,7 +254,12 @@ def init_db():
             _ensure_audit_log_columns(cur)
             cur.execute("PRAGMA user_version = 4")
 
+        elif ver == 4:
+            _ensure_sprint6_tables(cur)
+            cur.execute("PRAGMA user_version = 5")
+
         _ensure_audit_log_columns(cur)
+        _ensure_sprint6_tables(cur)
         conn.commit()
 
     _with_connection(apply)
@@ -432,6 +468,121 @@ def insert_audit_log(
         conn.commit()
 
     _with_connection(apply)
+
+
+def insert_shared_entry(
+    shared_id: str,
+    original_entry_id: Optional[int],
+    encryption_method: str,
+    recipient_info: str,
+    permissions: str,
+    expires_at: Optional[str] = None,
+):
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT OR REPLACE INTO shared_entries
+               (shared_id, original_entry_id, encryption_method, recipient_info, permissions, shared_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                shared_id,
+                original_entry_id,
+                encryption_method,
+                recipient_info,
+                permissions,
+                _timestamp(),
+                expires_at or "",
+            ),
+        )
+        conn.commit()
+
+    _with_connection(apply)
+
+
+def list_shared_entries(limit: int = 200):
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT shared_id, original_entry_id, encryption_method, recipient_info, permissions, shared_at, expires_at
+               FROM shared_entries ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "shared_id": r[0],
+                    "original_entry_id": r[1],
+                    "encryption_method": r[2],
+                    "recipient_info": r[3],
+                    "permissions": r[4],
+                    "shared_at": r[5],
+                    "expires_at": r[6],
+                }
+            )
+        return out
+
+    return _with_connection(apply)
+
+
+def insert_import_export_history(
+    operation_type: str,
+    format: str,
+    encryption_used: str,
+    entry_count: int,
+    file_size: int,
+    checksum: str,
+    verification_status: str,
+):
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO import_export_history
+               (operation_type, format, encryption_used, entry_count, file_size, checksum, verification_status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                operation_type,
+                format,
+                encryption_used,
+                int(entry_count or 0),
+                int(file_size or 0),
+                checksum or "",
+                verification_status or "",
+                _timestamp(),
+            ),
+        )
+        conn.commit()
+
+    _with_connection(apply)
+
+
+def list_import_export_history(limit: int = 200):
+    def apply(conn):
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT operation_type, format, encryption_used, entry_count, file_size, checksum, verification_status, created_at
+               FROM import_export_history ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "operation_type": r[0],
+                    "format": r[1],
+                    "encryption_used": r[2],
+                    "entry_count": r[3],
+                    "file_size": r[4],
+                    "checksum": r[5],
+                    "verification_status": r[6],
+                    "created_at": r[7],
+                }
+            )
+        return out
+
+    return _with_connection(apply)
 
 
 def backup():

@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import json
 import zlib
+import time
+import secrets
 from typing import Any, Dict, List, Optional, Tuple
 
 PAYLOAD_TYPES = ("public_key", "share_package", "share_link")
@@ -21,7 +23,13 @@ def build_payload(payload_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"payload_type: {PAYLOAD_TYPES}")
     inner = json.dumps({"type": payload_type, "data": data}, ensure_ascii=False, sort_keys=True).encode("utf-8")
     compressed = base64.b64encode(zlib.compress(inner)).decode("ascii")
-    body = {"v": 1, "blob": compressed}
+    body = {
+        "v": 1,
+        "blob": compressed,
+        "ts": int(time.time()),
+        "nonce": secrets.token_hex(8),
+        "ttl_sec": 300,
+    }
     raw = json.dumps(body, sort_keys=True).encode("utf-8")
     body["checksum"] = _checksum(raw)
     return body
@@ -68,6 +76,10 @@ def _validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
     if not checksum or not hmac.compare_digest(_checksum(raw), checksum):
         raise ValueError("Неверная контрольная сумма QR")
+    ts = int(payload.get("ts") or 0)
+    ttl = int(payload.get("ttl_sec") or 300)
+    if ts > 0 and ttl > 0 and time.time() > (ts + ttl):
+        raise ValueError("QR payload expired")
     blob = payload.get("blob", "")
     inner = zlib.decompress(base64.b64decode(blob.encode("ascii")))
     decoded = json.loads(inner.decode("utf-8"))
