@@ -159,19 +159,15 @@ crypto/
 3. `pip install -r requirements.txt`
 4. `python run.py`
 
-### Linux (демо после `git clone` с GitHub)
+### Linux
 
 ```bash
-git clone https://github.com/<ваш-аккаунт>/cryptosafe-manager.git
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
 cd cryptosafe-manager
 chmod +x scripts/setup_linux.sh scripts/run_linux.sh
-bash scripts/setup_linux.sh    # venv + pip (один раз)
-bash scripts/run_linux.sh      # GUI
+bash scripts/setup_linux.sh
+bash scripts/run_linux.sh
 ```
-
-На Ubuntu/Debian, если PyQt6 не стартует, скрипт `setup_linux.sh` подскажет пакеты `apt` для libxcb/EGL.
-
-Переменные для удалённого X11 (по необходимости): `export DISPLAY=:0`
 
 ### macOS
 
@@ -186,8 +182,6 @@ python run.py
 - `pytest tests/ -q --ignore=tests/test_integration.py`
 - `python scripts/generate_test_report.py`
 - `ruff check src/`
-
-**CI:** GitHub Actions — workflow `Linux` (тесты + проверка PyQt6 на Ubuntu).
 
 ---
 
@@ -207,19 +201,6 @@ python run.py
 | [Спринт 8](#спринт-8) | Резервное копирование и восстановление, Dockerfile/скрипт сборки |
 
 ---
-
-### Отчёты по спринтам (что сделано)
-
-Подробные отчёты с привязкой к пунктам TRD лежат в `docs/sprint_reports/`:
-
-- `docs/sprint_reports/sprint1.md`
-- `docs/sprint_reports/sprint2.md`
-- `docs/sprint_reports/sprint3.md`
-- `docs/sprint_reports/sprint4.md`
-- `docs/sprint_reports/sprint5.md`
-- `docs/sprint_reports/sprint6.md`
-- `docs/sprint_reports/sprint7.md`
-- `docs/sprint_reports/sprint8.md`
 
 ### Спринт 1
 
