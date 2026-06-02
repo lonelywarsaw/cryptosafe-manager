@@ -18,6 +18,74 @@ class ClipboardAdapter(ABC):
         raise NotImplementedError
 
 
+def _ensure_windows_com() -> None:
+    if platform.system().lower() != "windows":
+        return
+    try:
+        import pythoncom  # type: ignore
+
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
+
+
+_gui_bridge = None
+
+
+def _get_gui_bridge():
+    global _gui_bridge
+    if _gui_bridge is not None:
+        return _gui_bridge
+    try:
+        from PyQt6.QtCore import QObject, pyqtSlot, QMetaObject, Qt, QThread
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        return None
+
+    class _GuiBridge(QObject):
+        @pyqtSlot(object, object)
+        def _run(self, fn, out):
+            _ensure_windows_com()
+            try:
+                out["v"] = fn()
+            except Exception:
+                out["v"] = None
+
+    app = QApplication.instance()
+    if not app:
+        return None
+    _gui_bridge = _GuiBridge()
+    _gui_bridge.moveToThread(app.thread())
+    return _gui_bridge
+
+
+def _run_on_gui_thread(fn):
+    try:
+        from PyQt6.QtCore import QThread, QMetaObject, Qt
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        return fn()
+
+    app = QApplication.instance()
+    if not app or QThread.currentThread() is app.thread():
+        _ensure_windows_com()
+        return fn()
+
+    bridge = _get_gui_bridge()
+    if bridge is None:
+        return fn()
+
+    out = {"v": None}
+    QMetaObject.invokeMethod(
+        bridge,
+        "_run",
+        Qt.ConnectionType.BlockingQueuedConnection,
+        fn,
+        out,
+    )
+    return out["v"]
+
+
 class QtClipboardAdapter(ClipboardAdapter):
     def _clip(self):
         try:
@@ -30,42 +98,50 @@ class QtClipboardAdapter(ClipboardAdapter):
         return app.clipboard()
 
     def copy_to_clipboard(self, data: str) -> bool:
-        cb = self._clip()
-        if not cb:
-            return False
-        try:
-            cb.setText(data or "")
-            return True
-        except Exception:
-            return False
+        def _do() -> bool:
+            cb = self._clip()
+            if not cb:
+                return False
+            try:
+                cb.setText(data or "")
+                return True
+            except Exception:
+                return False
+
+        return _run_on_gui_thread(_do)
 
     def clear_clipboard(self) -> bool:
-        cb = self._clip()
-        if not cb:
-            return False
-        try:
-            cb.clear()
-            cb.setText("")
-            return True
-        except Exception:
-            return False
+        def _do() -> bool:
+            cb = self._clip()
+            if not cb:
+                return False
+            try:
+                cb.clear()
+                return True
+            except Exception:
+                return False
+
+        return _run_on_gui_thread(_do)
 
     def get_clipboard_content(self) -> Optional[str]:
-        cb = self._clip()
-        if not cb:
-            return None
-        try:
-            text = cb.text()
-            return text if text is not None else ""
-        except Exception:
-            return None
+        def _do() -> Optional[str]:
+            cb = self._clip()
+            if not cb:
+                return None
+            try:
+                text = cb.text()
+                return text if text is not None else ""
+            except Exception:
+                return None
+
+        return _run_on_gui_thread(_do)
 
 
 class WindowsClipboardAdapter(ClipboardAdapter):
-    # Windows: win32clipboard + синхронизация с Qt (один адаптер для спринта 4)
+    # Windows: win32clipboard (без Qt — иначе OleSetClipboard / CoInitialize на фоновых потоках)
     def __init__(self):
         self._win32clipboard = None
-        self._qt = QtClipboardAdapter()
+        self._qt_fallback = QtClipboardAdapter()
         try:
             import win32clipboard  # type: ignore
 
@@ -123,14 +199,17 @@ class WindowsClipboardAdapter(ClipboardAdapter):
             return False
 
     def copy_to_clipboard(self, data: str) -> bool:
-        ok = self._win32_copy(data)
-        self._qt.copy_to_clipboard(data)
-        return ok or self._qt.copy_to_clipboard(data)
+        if self._win32_copy(data):
+            return True
+        return self._qt_fallback.copy_to_clipboard(data)
 
     def clear_clipboard(self) -> bool:
         ok = self._win32_clear()
-        self._powershell_clear()
-        return self._qt.clear_clipboard() or ok
+        if not ok:
+            ok = self._powershell_clear()
+        if ok:
+            return True
+        return self._qt_fallback.clear_clipboard()
 
     def get_clipboard_content(self) -> Optional[str]:
         if self._win32clipboard:
@@ -145,7 +224,7 @@ class WindowsClipboardAdapter(ClipboardAdapter):
                     self._win32clipboard.CloseClipboard()
                 except Exception:
                     pass
-        return self._qt.get_clipboard_content()
+        return self._qt_fallback.get_clipboard_content()
 
 
 def create_platform_adapter() -> ClipboardAdapter:

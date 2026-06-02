@@ -1,0 +1,49 @@
+name: Linux
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-gui-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-venv python3-pip \
+            libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libegl1 libglib2.0-0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests (no integration)
+        run: |
+          python -m pytest tests/ -q \
+            --ignore=tests/test_integration.py \
+            --ignore=tests/test_password_change_integration.py
+
+      - name: Verify PyQt6 imports (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import sys; from PyQt6.QtWidgets import QApplication; app = QApplication(sys.argv); print('PyQt6 OK')"
+
+      - name: Verify application entrypoint imports
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import sys; sys.path.insert(0,'src'); import main; print('main OK')"

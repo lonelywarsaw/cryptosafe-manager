@@ -99,6 +99,8 @@ crypto/
 │   │   ├── audit/               # Спринт 5: подпись журнала, проверка целостности
 │   │   ├── vault/               # Спринт 3: EntryManager, AES-GCM, генератор паролей
 │   │   ├── import_export/       # Спринт 6: экспорт/импорт, шаринг, QR, key_exchange
+│   │   ├── security/            # Спринт 7: память, паника, авто-блокировка, профили
+│   │   ├── backup_service.py    # Спринт 8: резервные копии .csafe.zip
 │   │   ├── key_manager.py       # Кэш ключа шифрования после PBKDF2
 │   │   └── clipboard/           # Спринт 4: secure clipboard, адаптеры, мониторинг
 │   ├── database/
@@ -135,8 +137,10 @@ crypto/
 
 ## Сборка
 
-- Зависимости перечислены в `requirements.txt` с указанием версий.
-- На [Sprint 8](#спринт-8) планируются Dockerfile или скрипт сборки для упаковки.
+- Зависимости: `requirements.txt` (pytest, cryptography, PyQt6, pyinstaller, …).
+- Запуск из исходников: `python run.py`
+- Исполняемый файл (PyInstaller): `python scripts/build_executable.py` → `dist/CryptoSafeManager/`
+- Отчёт тестов: `python scripts/generate_test_report.py` → `tests/report/`
 
 ---
 
@@ -148,13 +152,42 @@ crypto/
 
 ## Установка и запуск
 
-1. Перейти в каталог проекта: `cd crypto`
-2. Создать виртуальное окружение: `python -m venv .venv`
-3. Активировать: Windows — `.venv\Scripts\Activate.ps1`
-4. Установить зависимости: `pip install -r requirements.txt`
-5. Запуск приложения: `python -m src.main`
-6. Тесты: из корня проекта `pytest tests/` (conftest подставляет src в путь)
-7. Проверка стиля (PEP 8): `ruff check src/`
+### Windows
+
+1. `cd cryptosafe-manager`
+2. `python -m venv .venv` → `.venv\Scripts\Activate.ps1`
+3. `pip install -r requirements.txt`
+4. `python run.py`
+
+### Linux (демо после `git clone` с GitHub)
+
+```bash
+git clone https://github.com/<ваш-аккаунт>/cryptosafe-manager.git
+cd cryptosafe-manager
+chmod +x scripts/setup_linux.sh scripts/run_linux.sh
+bash scripts/setup_linux.sh    # venv + pip (один раз)
+bash scripts/run_linux.sh      # GUI
+```
+
+На Ubuntu/Debian, если PyQt6 не стартует, скрипт `setup_linux.sh` подскажет пакеты `apt` для libxcb/EGL.
+
+Переменные для удалённого X11 (по необходимости): `export DISPLAY=:0`
+
+### macOS
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
+```
+
+### Тесты и отчёты
+
+- `pytest tests/ -q --ignore=tests/test_integration.py`
+- `python scripts/generate_test_report.py`
+- `ruff check src/`
+
+**CI:** GitHub Actions — workflow `Linux` (тесты + проверка PyQt6 на Ubuntu).
 
 ---
 
@@ -185,6 +218,8 @@ crypto/
 - `docs/sprint_reports/sprint4.md`
 - `docs/sprint_reports/sprint5.md`
 - `docs/sprint_reports/sprint6.md`
+- `docs/sprint_reports/sprint7.md`
+- `docs/sprint_reports/sprint8.md`
 
 ### Спринт 1
 
@@ -310,19 +345,15 @@ crypto/
 | log_signer.py         | Создание цифровых подписей (HMAC-SHA256 + hash chain) |
 | log_verifier.py       | Проверка целостности логов, hash chain, обнаружение tampering |
 | integrity.py          | Проверка при старте приложения и по запросу пользователя |
-| view_windows.py       | GUI-окно журнала аудитаПоведение и возможности:и:**
+| view_windows.py       | GUI-окно журнала аудита |
 
-- Логируются все ключевые события: вход/выход, CRUD записей, копирование в буфер, изменение настроек и т.д.
-- Чувствительные данные в логах заменяются на [REDACTED].
-- Криптографическая защита: цепочка хэшей (previous_hash) + цифровая подпись каждого события.
-- Автоматическая проверка целостности при запуске после разблокировки.
-- GUI: таблица с фильтрами по типу события, времени, поиск, кнопки «Проверить целостность» и экспорт (JSON + CSV).
-- Ротация логов: ограничение по количеству записей (audit_max_entriesИнтеграция:я:**
-- Полная подписка на событийную шину из спринтов 3 и 4.
-- Записи сохраняются в таблицу audit_log в зашифрованном/подписанном видТесты:ы:** tests/test_sprint5_audit.py
+**Поведение:**
 
-**Ограничения / Планируется:** 
-- Полноценный Ed25519 вместо HMAC, шифрование логов at rest, PDF-отчёты, фоновая проверка, расширенная аналитика.
+- Логируются ключевые события: вход/выход, CRUD, буфер, импорт/экспорт, паника, профили.
+- Чувствительные данные — `[REDACTED]`; цепочка `previous_hash` + HMAC подпись.
+- Проверка целостности при старте; GUI: фильтры, экспорт JSON/CSV.
+
+**Тесты:** `tests/test_sprint5_audit_validation.py`, `tests/test_sprint5_audit_perf.py`
 ---
 
 ### Спринт 6
@@ -355,16 +386,34 @@ crypto/
 
 ### Спринт 7
 
-**Планируется:** дополнительные настройки и полировка.
+**Реализовано:** усиление безопасности, авто-блокировка, трей, режим паники, профили.
 
-- Расширение настроек (безопасность, внешний вид, прочее).
-- Исправление замечаний, рефакторинг, улучшение UX.
+| Модуль | Назначение |
+|--------|------------|
+| `core/security/side_channel_protection.py` | Сравнение в постоянное время |
+| `core/security/memory_guard.py` | Secure wipe, SecretBuffer |
+| `core/security/activity_monitor.py` | Idle + Windows GetLastInputInfo |
+| `core/security/panic_mode.py` | Экстренная блокировка |
+| `core/security/security_profiles.py` | Standard / Enhanced / Paranoid |
+| `gui/tray_icon.py` | Системный трей |
+
+- Горячая клавиша паники: `Ctrl+Shift+Esc`; сворачивание в трей.
+- События: `VaultLocked`, `PanicModeActivated`, `SecurityProfileChanged`.
+
+**Тесты:** `tests/test_sprint7_security.py`, `tests/test_sprint7_perf.py`
 
 ---
 
 ### Спринт 8
 
-**Планируется:** резервное копирование и упаковка.
+**Реализовано:** финальная интеграция, backup, упаковка, документация.
 
-- Реализация функций backup и restore (резервная копия и восстановление хранилища).
-- Dockerfile или скрипт сборки для упаковки приложения (например, образ или исполняемый пакет).
+| Артефакт | Назначение |
+|----------|------------|
+| `core/backup_service.py` | Архив `.csafe.zip` + manifest SHA-256 |
+| `run.py` | Запуск из корня репозитория |
+| `cryptosafe.spec` + `scripts/build_executable.py` | PyInstaller |
+| `scripts/generate_test_report.py` | junit + coverage в `tests/report/` |
+| `docs/user_guide.md`, `docs/technical.md` | Руководство и архитектура |
+
+**Тесты:** `tests/test_sprint8_backup.py` + полный набор `tests/test_sprint*.py`

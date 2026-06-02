@@ -1,16 +1,27 @@
-# окно настроек: вкладки безопасность (буфер, авто-блокировка), внешний вид (тема, язык), дополнительно
-# при открытии значения подставляются из config, при «применить» записываются обратно в config
+# окно настроек: безопасность, внешний вид, профили (спринт 7), резервные копии (спринт 8)
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
-    QSpinBox, QComboBox, QPushButton, QHBoxLayout, QLabel, QCheckBox, QLineEdit,
+    QDialog,
+    QVBoxLayout,
+    QTabWidget,
+    QWidget,
+    QFormLayout,
+    QSpinBox,
+    QComboBox,
+    QPushButton,
+    QHBoxLayout,
+    QLabel,
+    QCheckBox,
+    QLineEdit,
+    QMessageBox,
 )
-from PyQt6.QtCore import Qt
 
 from core import config
+from core.security.security_profiles import PROFILES, apply_profile, describe_profile
 from .strings import t
 
 
@@ -18,7 +29,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(t("settings"))
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(440)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
         tabs.addTab(self._security_tab(), t("security"))
@@ -39,6 +50,16 @@ class SettingsDialog(QDialog):
     def _security_tab(self):
         w = QWidget()
         form = QFormLayout(w)
+        self._profile_combo = QComboBox()
+        self._profile_combo.addItem(t("profile_standard"), "standard")
+        self._profile_combo.addItem(t("profile_enhanced"), "enhanced")
+        self._profile_combo.addItem(t("profile_paranoid"), "paranoid")
+        self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        form.addRow(t("security_profile"), self._profile_combo)
+        self._profile_desc = QLabel()
+        self._profile_desc.setWordWrap(True)
+        form.addRow(t("profile_desc"), self._profile_desc)
+
         self._clipboard_spin = QSpinBox()
         self._clipboard_spin.setRange(0, 300)
         self._clipboard_spin.setSuffix(" сек")
@@ -53,9 +74,24 @@ class SettingsDialog(QDialog):
         self._whitelist_edit = QLineEdit()
         form.addRow(t("clipboard_whitelist"), self._whitelist_edit)
         self._autolock_spin = QSpinBox()
-        self._autolock_spin.setRange(0, 120)
+        self._autolock_spin.setRange(1, 480)
         self._autolock_spin.setSuffix(" мин")
         form.addRow(t("auto_lock"), self._autolock_spin)
+        self._sensitivity_combo = QComboBox()
+        self._sensitivity_combo.addItems(["low", "medium", "high"])
+        form.addRow(t("activity_sensitivity"), self._sensitivity_combo)
+        self._device_combo = QComboBox()
+        self._device_combo.addItem(t("device_laptop"), "laptop")
+        self._device_combo.addItem(t("device_desktop"), "desktop")
+        form.addRow(t("device_profile_label"), self._device_combo)
+        self._tray_checkbox = QCheckBox()
+        form.addRow(t("minimize_to_tray"), self._tray_checkbox)
+        self._start_tray_checkbox = QCheckBox()
+        form.addRow(t("start_minimized_tray"), self._start_tray_checkbox)
+        self._panic_hotkey_checkbox = QCheckBox()
+        form.addRow(t("panic_hotkey"), self._panic_hotkey_checkbox)
+        self._panic_stealth_checkbox = QCheckBox()
+        form.addRow(t("panic_stealth"), self._panic_stealth_checkbox)
         return w
 
     def _appearance_tab(self):
@@ -76,8 +112,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel(t("backup_export")))
         return w
 
+    def _on_profile_changed(self):
+        name = self._profile_combo.currentData()
+        self._profile_desc.setText(describe_profile(name or "standard"))
+
     def _load(self):
-        # при открытии диалога в поля подставляются текущие значения из config
         self._clipboard_spin.setValue(int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30"))
         self._notifications_checkbox.setChecked(
             int(config.get(config.CLIPBOARD_NOTIFICATIONS, "1") or "1") > 0
@@ -85,21 +124,53 @@ class SettingsDialog(QDialog):
         level = config.get(config.CLIPBOARD_SECURITY_LEVEL, "basic") or "basic"
         self._security_level.setCurrentIndex({"basic": 0, "advanced": 1, "paranoid": 2}.get(level, 0))
         self._whitelist_edit.setText(config.get(config.CLIPBOARD_APP_WHITELIST, "") or "")
-        self._autolock_spin.setValue(int(config.get(config.AUTO_LOCK_MINUTES, "5") or "5"))
+        self._autolock_spin.setValue(max(1, int(config.get(config.AUTO_LOCK_MINUTES, "5") or "5")))
         theme = config.get(config.THEME, "system") or "system"
         self._theme_combo.setCurrentIndex({"system": 0, "dark": 1, "light": 2}.get(theme, 0))
         lang = config.get(config.LANGUAGE, "ru") or "ru"
         self._lang_combo.setCurrentIndex(0 if lang == "ru" else 1)
+        profile = config.get(config.SECURITY_PROFILE, "standard") or "standard"
+        idx = {"standard": 0, "enhanced": 1, "paranoid": 2}.get(profile, 0)
+        self._profile_combo.setCurrentIndex(idx)
+        self._on_profile_changed()
+        sens = config.get(config.ACTIVITY_SENSITIVITY, "medium") or "medium"
+        self._sensitivity_combo.setCurrentIndex({"low": 0, "medium": 1, "high": 2}.get(sens, 1))
+        device = config.get(config.DEVICE_PROFILE, "laptop") or "laptop"
+        self._device_combo.setCurrentIndex(0 if device == "laptop" else 1)
+        self._tray_checkbox.setChecked(int(config.get(config.MINIMIZE_TO_TRAY, "0") or "0") > 0)
+        self._start_tray_checkbox.setChecked(int(config.get(config.START_MINIMIZED_TRAY, "0") or "0") > 0)
+        self._panic_hotkey_checkbox.setChecked(int(config.get(config.PANIC_HOTKEY_ENABLED, "1") or "1") > 0)
+        self._panic_stealth_checkbox.setChecked(int(config.get(config.PANIC_STEALTH_MODE, "0") or "0") > 0)
 
     def _apply(self):
-        # выбранные значения записываются в config, диалог закрывается
-        config.set(config.CLIPBOARD_TIMEOUT, str(self._clipboard_spin.value()))
-        config.set(config.CLIPBOARD_NOTIFICATIONS, "1" if self._notifications_checkbox.isChecked() else "0")
-        level_map = {0: "basic", 1: "advanced", 2: "paranoid"}
-        config.set(config.CLIPBOARD_SECURITY_LEVEL, level_map[self._security_level.currentIndex()])
-        config.set(config.CLIPBOARD_APP_WHITELIST, (self._whitelist_edit.text() or "").strip())
-        config.set(config.AUTO_LOCK_MINUTES, str(self._autolock_spin.value()))
+        profile_name = self._profile_combo.currentData() or "standard"
+        prev = config.get(config.SECURITY_PROFILE, "standard")
+        try:
+            if profile_name in PROFILES and profile_name != prev:
+                apply_profile(profile_name)
+            config.set(config.CLIPBOARD_TIMEOUT, str(self._clipboard_spin.value()))
+            config.set(config.CLIPBOARD_NOTIFICATIONS, "1" if self._notifications_checkbox.isChecked() else "0")
+            level_map = {0: "basic", 1: "advanced", 2: "paranoid"}
+            config.set(config.CLIPBOARD_SECURITY_LEVEL, level_map[self._security_level.currentIndex()])
+            config.set(config.CLIPBOARD_APP_WHITELIST, (self._whitelist_edit.text() or "").strip())
+            config.set(config.AUTO_LOCK_MINUTES, str(self._autolock_spin.value()))
+            config.set(config.ACTIVITY_SENSITIVITY, self._sensitivity_combo.currentText())
+            config.set(config.DEVICE_PROFILE, self._device_combo.currentData())
+            config.set(config.SECURITY_PROFILE, profile_name)
+        except ValueError as exc:
+            QMessageBox.warning(self, t("settings"), str(exc))
+            return
+
+        config.set(config.MINIMIZE_TO_TRAY, "1" if self._tray_checkbox.isChecked() else "0")
+        config.set(config.START_MINIMIZED_TRAY, "1" if self._start_tray_checkbox.isChecked() else "0")
+        config.set(config.PANIC_HOTKEY_ENABLED, "1" if self._panic_hotkey_checkbox.isChecked() else "0")
+        config.set(config.PANIC_STEALTH_MODE, "1" if self._panic_stealth_checkbox.isChecked() else "0")
         theme_map = {0: "system", 1: "dark", 2: "light"}
         config.set(config.THEME, theme_map[self._theme_combo.currentIndex()])
         config.set(config.LANGUAGE, "ru" if self._lang_combo.currentIndex() == 0 else "en")
+
+        if profile_name in PROFILES and profile_name != prev:
+            from core import events
+
+            events.publish(events.SecurityProfileChanged, sync=True, profile=profile_name)
         self.accept()

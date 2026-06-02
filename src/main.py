@@ -14,15 +14,33 @@ from core.audit import register as register_audit
 from core.audit import verify_integrity
 from database import db as database_db
 from gui.theme import apply_theme
+from gui.app_icon import load_app_icon
 from gui.main_window import MainWindow
 from gui.setup_wizard import SetupWizard
 from gui.unlock_dialog import UnlockDialog
 
 
 def main():
+    if sys.platform == "win32":
+        try:
+            import pythoncom  # type: ignore
+
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
     app = QApplication(sys.argv)
     app.setApplicationName("CryptoSafe Manager")
+    _icon = load_app_icon()
+    if _icon is not None:
+        app.setWindowIcon(_icon)
     apply_theme(app)
+    if not config.get(config.SECURITY_PROFILE):
+        try:
+            from core.security.security_profiles import apply_profile, PROFILE_STANDARD
+
+            apply_profile(PROFILE_STANDARD)
+        except Exception:
+            pass
     database_db.set_db_path(config.get(config.DB_PATH))
     database_db.init_db()
     register_audit()

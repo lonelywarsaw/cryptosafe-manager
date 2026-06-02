@@ -14,12 +14,20 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: Install Qt libraries (PyQt6)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
+          libxcb-keysyms1 libxcb-render-util0 libegl1 libglib2.0-0
+
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
-    
-    - name: Run tests (skip GUI tests)
+
+    - name: Run tests (skip integration)
       run: |
-        python -m pytest tests/ -v --ignore=tests/test_integration.py --ignore=tests/test_password_change_integration.py
+        python -m pytest tests/ -q \
+          --ignore=tests/test_integration.py \
+          --ignore=tests/test_password_change_integration.py

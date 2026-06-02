@@ -63,6 +63,14 @@ LANGUAGE = "language"
 CLIPBOARD_NOTIFICATIONS = "clipboard_notifications"
 CLIPBOARD_SECURITY_LEVEL = "clipboard_security_level"
 CLIPBOARD_APP_WHITELIST = "clipboard_app_whitelist"
+SECURITY_PROFILE = "security_profile"
+ACTIVITY_SENSITIVITY = "activity_sensitivity"
+MEMORY_LOCK_ENABLED = "memory_lock_enabled"
+MINIMIZE_TO_TRAY = "minimize_to_tray"
+START_MINIMIZED_TRAY = "start_minimized_tray"
+PANIC_HOTKEY_ENABLED = "panic_hotkey_enabled"
+PANIC_STEALTH_MODE = "panic_stealth_mode"
+DEVICE_PROFILE = "device_profile"
 
 
 def _try_decode_salt(value):

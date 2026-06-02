@@ -16,6 +16,11 @@ ClipboardCleared = "ClipboardCleared"
 VaultExported = "VaultExported"
 VaultImported = "VaultImported"
 EntryShared = "EntryShared"
+VaultLocked = "VaultLocked"
+PanicModeActivated = "PanicModeActivated"
+SecurityProfileChanged = "SecurityProfileChanged"
+BackupCreated = "BackupCreated"
+BackupRestored = "BackupRestored"
 
 # словарь: тип события → список callback-функций
 _subscribers = {}
