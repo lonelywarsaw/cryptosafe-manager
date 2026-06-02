@@ -41,8 +41,57 @@ def _pem_public(key: PublicKeyTypes) -> str:
     ).decode("ascii")
 
 
+def normalize_pem_block(pem_text: str) -> str:
+    """Извлекает первый PEM-блок; убирает лишние пробелы и переносы."""
+    if not pem_text or not str(pem_text).strip():
+        raise ValueError("Пустой PEM")
+    text = str(pem_text).strip().replace("\r\n", "\n").replace("\r", "\n")
+    if "-----BEGIN" not in text:
+        raise ValueError("PEM должен содержать строки -----BEGIN ... -----")
+    lines: List[str] = []
+    in_block = False
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("-----BEGIN"):
+            if lines:
+                break
+            in_block = True
+        if in_block:
+            lines.append(line)
+        if line.startswith("-----END"):
+            break
+    if len(lines) < 2 or not lines[0].startswith("-----BEGIN") or not lines[-1].startswith("-----END"):
+        raise ValueError("Неполный PEM-блок")
+    return "\n".join(lines) + "\n"
+
+
+def optional_public_key_pem(pem_text: Optional[str]) -> Optional[str]:
+    if pem_text is None:
+        return None
+    stripped = str(pem_text).strip()
+    if not stripped:
+        return None
+    normalized = normalize_pem_block(stripped)
+    load_pem_public_key(normalized.encode("ascii"))
+    return normalized
+
+
+def optional_private_key_pem(pem_text: Optional[str]) -> Optional[str]:
+    if pem_text is None:
+        return None
+    stripped = str(pem_text).strip()
+    if not stripped:
+        return None
+    normalized = normalize_pem_block(stripped)
+    load_pem_private_key(normalized.encode("ascii"), password=None)
+    return normalized
+
+
 def public_key_fingerprint(public_key_pem: str) -> str:
-    pub = load_pem_public_key(public_key_pem.encode("ascii"))
+    pem = normalize_pem_block(public_key_pem)
+    pub = load_pem_public_key(pem.encode("ascii"))
     der = pub.public_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -51,7 +100,8 @@ def public_key_fingerprint(public_key_pem: str) -> str:
 
 
 def wrap_key_for_public(data_key: bytes, public_key_pem: str) -> Dict[str, str]:
-    pub = load_pem_public_key(public_key_pem.encode("ascii"))
+    pem = normalize_pem_block(public_key_pem)
+    pub = load_pem_public_key(pem.encode("ascii"))
     if not isinstance(pub, rsa.RSAPublicKey):
         raise ValueError("Для обёртки ключа поддерживается RSA-2048")
     wrapped = pub.encrypt(
@@ -62,7 +112,8 @@ def wrap_key_for_public(data_key: bytes, public_key_pem: str) -> Dict[str, str]:
 
 
 def unwrap_key_with_private(wrapped: Dict[str, str], private_key_pem: str) -> bytes:
-    priv = load_pem_private_key(private_key_pem.encode("ascii"), password=None)
+    pem = normalize_pem_block(private_key_pem)
+    priv = load_pem_private_key(pem.encode("ascii"), password=None)
     if not isinstance(priv, rsa.RSAPrivateKey):
         raise ValueError("Нужен RSA закрытый ключ")
     cipher = base64.b64decode(wrapped.get("ciphertext", "").encode("ascii"))

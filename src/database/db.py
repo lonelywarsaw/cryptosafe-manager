@@ -585,14 +585,16 @@ def list_import_export_history(limit: int = 200):
     return _with_connection(apply)
 
 
-def backup():
-    # заглушка: резервная копия бд (спринте 8)
-    pass
+def backup(dest_path: str, *, include_config: bool = True):
+    from core.backup_service import create_backup
+
+    return create_backup(dest_path, include_config=include_config)
 
 
-def restore(path):
-    # заглушка: восстановление из резервной копии (спринт 8)
-    pass
+def restore(path: str, *, restore_config: bool = False):
+    from core.backup_service import restore_backup
+
+    return restore_backup(path, restore_config=restore_config)
 
 
 def get_key_store(key_type):

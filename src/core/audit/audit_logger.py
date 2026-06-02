@@ -131,3 +131,8 @@ def register():
         async_log=True,
     )
     _sub(events.EntryShared, lambda kw: f"permission={kw.get('permission')}", async_log=True)
+    _sub(events.VaultLocked, lambda kw: f"reason={kw.get('reason', 'unknown')}")
+    _sub(events.PanicModeActivated, lambda kw: f"method={kw.get('method', 'unknown')}")
+    _sub(events.SecurityProfileChanged, lambda kw: f"profile={kw.get('profile')}")
+    _sub(events.BackupCreated, lambda kw: f"path={kw.get('path')} entries={kw.get('entries')}", async_log=True)
+    _sub(events.BackupRestored, lambda kw: f"path={kw.get('path')}", async_log=True)
