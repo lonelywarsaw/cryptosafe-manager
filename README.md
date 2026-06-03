@@ -152,17 +152,21 @@ crypto/
 
 ## Установка и запуск
 
-### Windows
+На всех ОС одна схема: **`git clone` → `setup_*` (один раз) → `run_*` (GUI)**.
 
-1. `cd cryptosafe-manager`
-2. `python -m venv .venv` → `.venv\Scripts\Activate.ps1`
-3. `pip install -r requirements.txt`
-4. `python run.py`
+### Windows (после `git clone` с GitHub)
 
-### Linux (демо после `git clone` с GitHub)
+```powershell
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
+cd cryptosafe-manager
+.\scripts\setup_windows.ps1    # venv + pip (один раз)
+.\scripts\run_windows.ps1        # GUI
+```
+
+### Linux (после `git clone` с GitHub)
 
 ```bash
-git clone https://github.com/<ваш-аккаунт>/cryptosafe-manager.git
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
 cd cryptosafe-manager
 chmod +x scripts/setup_linux.sh scripts/run_linux.sh
 bash scripts/setup_linux.sh    # venv + pip (один раз)
@@ -173,13 +177,27 @@ bash scripts/run_linux.sh      # GUI
 
 Переменные для удалённого X11 (по необходимости): `export DISPLAY=:0`
 
-### macOS
+### macOS (после `git clone` с GitHub)
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python run.py
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
+cd cryptosafe-manager
+chmod +x scripts/setup_macos.sh scripts/run_macos.sh
+bash scripts/setup_macos.sh    # venv + pip (один раз)
+bash scripts/run_macos.sh      # GUI
 ```
+
+### Установка на компьютер без Python (.exe / пакет)
+
+После `setup_*` на **той же ОС**, где собираете:
+
+| ОС | Сборка | Запуск у пользователя |
+|----|--------|------------------------|
+| Windows | `.\scripts\build_windows.ps1` | `dist\CryptoSafeManager\CryptoSafeManager.exe` |
+| Linux | `bash scripts/build_linux.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
+| macOS | `bash scripts/build_macos.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
+
+Скопируйте на целевой ПК **всю папку** `dist/CryptoSafeManager/`. **.exe** делается PyInstaller на Windows, не Docker.
 
 ### Тесты и отчёты
 
