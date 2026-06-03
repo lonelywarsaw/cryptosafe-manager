@@ -1,0 +1,12 @@
+.venv
+dist
+build
+__pycache__
+*.pyc
+.git
+.pytest_cache
+tests/report
+docs/sprint_reports
+scripts/procdump.exe
+scripts/myeasylog.log
+*.dmp

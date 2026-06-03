@@ -30,3 +30,4 @@ pip install -r requirements.txt
 
 echo ""
 echo "Готово. Запуск: bash scripts/run_linux.sh"
+echo "Сборка приложения для установки: bash scripts/build_linux.sh"
