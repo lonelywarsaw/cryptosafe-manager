@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.perf
+
 import os
 import sqlite3
 import statistics

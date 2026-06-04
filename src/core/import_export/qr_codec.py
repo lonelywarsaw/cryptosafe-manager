@@ -1,4 +1,4 @@
-# QR: checksum, chunking, без plaintext (спринт 6, QR)
+"""QR-кодек: сжатый payload, чанки, checksum, рендер и сканирование PNG."""
 
 import base64
 import hashlib
@@ -19,6 +19,15 @@ def _checksum(payload_bytes: bytes, secret: bytes = b"cryptosafe-qr-v1") -> str:
 
 
 def build_payload(payload_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Собирает сжатый QR-payload с checksum и TTL.
+
+    Args:
+        payload_type: public_key, share_package или share_link.
+        data: Полезная нагрузка для типа.
+
+    Returns:
+        Тело payload (v, blob, ts, nonce, ttl_sec, checksum).
+    """
     if payload_type not in PAYLOAD_TYPES:
         raise ValueError(f"payload_type: {PAYLOAD_TYPES}")
     inner = json.dumps({"type": payload_type, "data": data}, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -36,6 +45,11 @@ def build_payload(payload_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def encode_chunks(payload: Dict[str, Any]) -> List[str]:
+    """Разбивает payload на строки с префиксом CSM1: (одна или несколько частей).
+
+    Returns:
+        Список строк для печати в QR.
+    """
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(raw) <= MAX_CHUNK_LEN:
         return [QR_PREFIX + raw]
@@ -49,6 +63,14 @@ def encode_chunks(payload: Dict[str, Any]) -> List[str]:
 
 
 def decode_chunks(lines: List[str]) -> Dict[str, Any]:
+    """Собирает и проверяет QR-строки; возвращает расшифрованный inner (type, data).
+
+    Args:
+        lines: Строки со сканера (с префиксом CSM1:).
+
+    Returns:
+        dict с ключами type и data.
+    """
     cleaned = []
     for line in lines:
         line = line.strip()
@@ -89,6 +111,15 @@ def _validate_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def render_qr_png(text: str, *, error_correction: str = "M") -> bytes:
+    """Рендерит QR в PNG-байты (нужен пакет qrcode).
+
+    Args:
+        text: Данные для кодирования.
+        error_correction: Уровень коррекции: L, M, Q или H.
+
+    Returns:
+        Содержимое PNG-файла.
+    """
     try:
         import qrcode
     except ImportError as exc:
@@ -111,6 +142,11 @@ def render_qr_png(text: str, *, error_correction: str = "M") -> bytes:
 
 
 def decode_qr_image(image_path: str) -> str:
+    """Читает первый QR с изображения (pyzbar + Pillow).
+
+    Returns:
+        Текст из QR.
+    """
     try:
         from pyzbar.pyzbar import decode as zbar_decode
         from PIL import Image

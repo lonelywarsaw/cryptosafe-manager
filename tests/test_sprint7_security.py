@@ -1,5 +1,7 @@
 # Спринт 7 — TEST-1..TEST-4 (TRD §9)
 
+import pytest
+
 import os
 import sqlite3
 import statistics
@@ -45,6 +47,7 @@ class TestSprint7Memory(unittest.TestCase):
 
 
 class TestSprint7AutoLock(unittest.TestCase):
+    @pytest.mark.slow
     def test_test3_activity_monitor_triggers_lock(self):
         """TEST-3: монитор активности вызывает lock_callback по таймауту."""
         fired = []

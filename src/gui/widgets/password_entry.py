@@ -1,4 +1,4 @@
-# виджет ввода пароля: по умолчанию отображаются точки, кнопка «глаз» переключает показ/скрытие текста
+"""Password input widget with show/hide toggle. / Виджет ввода пароля с переключателем показа/скрытия."""
 
 from PyQt6.QtWidgets import QLineEdit, QWidget, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt
@@ -7,7 +7,10 @@ from ..strings import t
 
 
 class PasswordEntry(QWidget):
+    """Line edit for secrets with a localized visibility toggle. / Поле секрета с локализованным переключателем видимости."""
+
     def __init__(self, parent=None):
+        """Builds masked line edit and show/hide button. / Создаёт скрытое поле ввода и кнопку показа/скрытия."""
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -44,10 +47,13 @@ class PasswordEntry(QWidget):
             self._btn.setText(t("password_show"))
 
     def text(self):
+        """Returns the current password text. / Возвращает текущий текст пароля."""
         return self._line.text()
 
     def setText(self, text):
+        """Sets the password field contents. / Задаёт содержимое поля пароля."""
         self._line.setText(text)
 
     def clear(self):
+        """Clears the password field. / Очищает поле пароля."""
         self._line.clear()

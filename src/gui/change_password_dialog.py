@@ -1,4 +1,4 @@
-# диалог смены мастер-пароля: текущий, новый, подтверждение; спринт 2 CHANGE-1
+"""Change master password dialog with vault re-encryption. / Диалог смены мастер-пароля с перешифровкой хранилища."""
 
 import sys
 import os
@@ -20,7 +20,10 @@ from .widgets.password_entry import PasswordEntry
 
 
 class ChangePasswordDialog(QDialog):
+    """Dialog to verify current password and rotate encryption keys. / Диалог проверки текущего пароля и смены ключей шифрования."""
+
     def __init__(self, parent=None):
+        """Builds current, new, and confirm password fields. / Создаёт поля текущего, нового и подтверждения пароля."""
         super().__init__(parent)
         self.setWindowTitle(t("change_password_title"))
         self.setMinimumSize(420, 280)

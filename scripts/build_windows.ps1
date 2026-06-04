@@ -1,10 +1,10 @@
-# Сборка установочного пакета .exe (PyInstaller) — только на Windows
+# Build install package with PyInstaller (Windows only)
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 if (-not (Test-Path ".venv")) {
-    Write-Error "Сначала выполните: .\scripts\setup_windows.ps1"
+    Write-Error "Run first: .\scripts\setup_windows.ps1"
     exit 1
 }
 
@@ -14,9 +14,9 @@ python scripts/build_executable.py
 $exe = Join-Path $Root "dist\CryptoSafeManager\CryptoSafeManager.exe"
 Write-Host ""
 if (Test-Path $exe) {
-    Write-Host "Готово. Установка на другой ПК: скопируйте всю папку"
+    Write-Host "Done. Copy the whole folder to another PC:"
     Write-Host "  dist\CryptoSafeManager\"
-    Write-Host "и запустите CryptoSafeManager.exe"
+    Write-Host "Then run CryptoSafeManager.exe"
 } else {
-    Write-Host "Проверьте каталог dist\CryptoSafeManager\"
+    Write-Host "Check folder: dist\CryptoSafeManager\"
 }

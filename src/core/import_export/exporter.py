@@ -1,4 +1,4 @@
-# экспорт хранилища (спринт 6, EXP)
+"""Экспорт хранилища: encrypted JSON, CSV, Bitwarden, LastPass."""
 
 import json
 import os
@@ -20,6 +20,8 @@ from .formats.lastpass_format import entries_to_lastpass_csv
 
 
 class ExportOptions:
+    """Параметры экспорта: заметки, сжатие, выбор записей, ключ получателя."""
+
     def __init__(
         self,
         *,
@@ -37,8 +39,14 @@ class ExportOptions:
 
 
 class VaultExporter:
+    """Экспорт записей хранилища в различные форматы с проверкой мастер-пароля."""
+
     def __init__(self, entry_provider):
-        # entry_provider: callable() -> List[dict] полных записей (с password)
+        """Создаёт экспортёр.
+
+        Args:
+            entry_provider: Callable() -> список полных записей (с password).
+        """
         self._entries = entry_provider
 
     def _select_entries(self, options: ExportOptions) -> List[Dict[str, Any]]:
@@ -55,6 +63,16 @@ class VaultExporter:
         master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> Dict[str, Any]:
+        """Формирует зашифрованный JSON-пакет экспорта.
+
+        Args:
+            export_password: Пароль для шифрования пакета.
+            master_password: Мастер-пароль хранилища.
+            options: Параметры выборки и шифрования.
+
+        Returns:
+            Словарь пакета encrypted_json.
+        """
         if not master_password or not verify_master_password(master_password):
             raise PermissionError("Неверный мастер-пароль")
         options = options or ExportOptions()
@@ -98,6 +116,11 @@ class VaultExporter:
         master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> str:
+        """Записывает зашифрованный JSON на диск (атомарная замена через temp).
+
+        Returns:
+            Путь к записанному файлу.
+        """
         package = self.export_encrypted_json(
             export_password,
             master_password=master_password,
@@ -106,7 +129,11 @@ class VaultExporter:
         return self._write_temp_json(path, package)
 
     def export_csv(self, *, encrypt: bool = False, export_password: str = "", options: Optional[ExportOptions] = None) -> str:
-        # NOTE: plaintext CSV допускается для миграции (EXP-1), но по умолчанию предпочитается Encrypted JSON
+        """Экспорт в CSV; при encrypt=True — JSON-обёртка с шифрованием.
+
+        Returns:
+            Текст CSV или JSON-пакет (если encrypt).
+        """
         options = options or ExportOptions()
         entries = self._select_entries(options)
         text = entries_to_csv(entries)
@@ -143,6 +170,11 @@ class VaultExporter:
         return text
 
     def export_bitwarden(self, options: Optional[ExportOptions] = None) -> str:
+        """Экспорт в JSON Bitwarden (plaintext).
+
+        Returns:
+            Строка JSON.
+        """
         options = options or ExportOptions()
         entries = self._select_entries(options)
         events.publish(events.VaultExported, sync=True, format="bitwarden", entry_count=len(entries), selective=bool(options.entry_ids))
@@ -166,6 +198,7 @@ class VaultExporter:
         master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> Dict[str, Any]:
+        """Экспорт Bitwarden JSON, упакованный в зашифрованный JSON-пакет."""
         if not master_password or not verify_master_password(master_password):
             raise PermissionError("Неверный мастер-пароль")
         options = options or ExportOptions()
@@ -192,6 +225,11 @@ class VaultExporter:
         return pkg
 
     def export_lastpass_csv(self, options: Optional[ExportOptions] = None) -> str:
+        """Экспорт в CSV LastPass (plaintext).
+
+        Returns:
+            Текст CSV.
+        """
         options = options or ExportOptions()
         entries = self._select_entries(options)
         events.publish(events.VaultExported, sync=True, format="lastpass_csv", entry_count=len(entries), selective=bool(options.entry_ids))
@@ -215,6 +253,7 @@ class VaultExporter:
         master_password: str,
         options: Optional[ExportOptions] = None,
     ) -> Dict[str, Any]:
+        """Экспорт LastPass CSV, упакованный в зашифрованный JSON-пакет."""
         if not master_password or not verify_master_password(master_password):
             raise PermissionError("Неверный мастер-пароль")
         options = options or ExportOptions()

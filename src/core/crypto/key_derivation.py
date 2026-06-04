@@ -1,4 +1,4 @@
-# вывод ключей и хеша пароля: Argon2id для проверки пароля и PBKDF2-HMAC-SHA256 для ключа шифрования
+"""Вывод ключей и хеша пароля: Argon2id и PBKDF2-HMAC-SHA256."""
 
 import hashlib
 import secrets
@@ -34,13 +34,13 @@ def _get_hasher(time_cost=None, memory_cost=None, parallelism=None, hash_len=Non
 
 
 def hash_password_argon2(password: str) -> str:
-    # пароль хешируется Argon2id; строка содержит соль и параметры, её сохраняем в config
+    """Хеширует пароль Argon2id; строка содержит соль и параметры для хранения."""
     hasher = _get_hasher()
     return hasher.hash(password)
 
 
 def verify_password_argon2(stored_hash: str, password: str) -> bool:
-    # проверка пароля против сохранённого Argon2-хеша; при ошибке — фиктивное сравнение чтобы не светить тайминг
+    """Проверяет пароль против Argon2-хеша; при ошибке — фиктивное сравнение для тайминга."""
     if not stored_hash or not password:
         secrets.compare_digest(b"x", b"x")
         return False
@@ -54,7 +54,7 @@ def verify_password_argon2(stored_hash: str, password: str) -> bool:
 
 
 def derive_key_pbkdf2(password: str, salt: bytes, iterations: int = None) -> bytes:
-    # из пароля и соли выводится ключ 32 байта (AES-256) через PBKDF2-HMAC-SHA256
+    """Выводит 32-байтный ключ AES-256 из пароля и соли (PBKDF2-HMAC-SHA256)."""
     from core import config
 
     iter_count = iterations or int(config.get("pbkdf2_iterations", PBKDF2_ITERATIONS))

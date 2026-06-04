@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import ctypes
 import gc
 import multiprocessing
@@ -194,6 +196,7 @@ class TestClipboardWin32Clipboard(unittest.TestCase):
         self.assertTrue(got2 is None or got2 == "")
 
 
+@pytest.mark.slow
 @unittest.skipUnless(sys.platform == "win32", "TEST-3: Win32 MiniDump — только Windows")
 class TestClipboardMemorySecurity(unittest.TestCase):
     """TEST-3: безопасность памяти через Win32 API"""

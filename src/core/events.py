@@ -1,5 +1,4 @@
-# шина событий: кто-то публикует событие — все подписчики получают вызов
-# gui, бд и аудит не вызывают друг друга напрямую, а через события
+"""In-process event bus for decoupled modules. / Шина событий между GUI, БД и аудитом."""
 
 import queue
 import threading
@@ -30,14 +29,14 @@ _worker_running = True
 
 
 def subscribe(event_type, callback):
-    # регистрация callback для события; при publish() этот callback вызывается с kwargs
+    """Register callback for event_type. / Подписывает callback на тип события."""
     if event_type not in _subscribers:
         _subscribers[event_type] = []
     _subscribers[event_type].append(callback)
 
 
 def publish(event_type, sync=True, **kwargs):
-    # sync=True — подписчики вызываются сразу; False — событие кладётся в очередь
+    """Publish event to subscribers (sync or queued). / Публикует событие подписчикам."""
     if sync:
         _notify(event_type, kwargs)
     else:
@@ -69,6 +68,6 @@ _worker_thread.start()
 
 
 def shutdown():
-    # останавливается фоновый поток (вызывать при выходе из приложения)
+    """Stop async event worker thread. / Останавливает фоновый поток событий."""
     global _worker_running
     _worker_running = False

@@ -1,4 +1,4 @@
-# проверка подписей и цепочки хешей журнала аудита (спринт 5, VER)
+"""Проверка подписей и цепочки хешей журнала аудита."""
 
 import hashlib
 import json
@@ -12,6 +12,11 @@ def _entry_hash(entry_data: bytes, signature: str) -> str:
 
 
 def verify_audit_chain(rows: List[Dict[str, Any]], signer: Optional[AuditLogSigner]) -> Dict[str, Any]:
+    """Проверяет previous_hash и HMAC-подписи по порядку sequence_number.
+
+    Returns:
+        verified, breaks, valid_entries, total_entries, skipped.
+    """
     breaks: List[Dict[str, Any]] = []
     skipped = signer is None
     ordered = sorted(rows, key=lambda r: int(r.get("sequence_number") or r.get("id") or 0))
@@ -50,6 +55,7 @@ def verify_audit_chain(rows: List[Dict[str, Any]], signer: Optional[AuditLogSign
 
 
 def summarize_entry(row: Dict[str, Any]) -> Dict[str, str]:
+    """Извлекает timestamp, event_type, severity, details из entry_data или колонок."""
     payload = row.get("entry_data") or b""
     if isinstance(payload, memoryview):
         payload = payload.tobytes()

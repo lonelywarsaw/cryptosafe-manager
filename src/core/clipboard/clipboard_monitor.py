@@ -1,5 +1,4 @@
-# монитор буфера обмена
-
+"""Монитор буфера обмена: поллинг изменений через ClipboardAdapter."""
 
 import threading
 import time
@@ -9,7 +8,12 @@ from .platform_adapter import ClipboardAdapter
 
 
 class ClipboardMonitor:
+    """Фоновый поллинг буфера обмена и callback при смене текста."""
+
     def __init__(self, adapter: ClipboardAdapter):
+        """Args:
+            adapter: Платформенный адаптер чтения/записи буфера.
+        """
         self._adapter = adapter
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -17,10 +21,11 @@ class ClipboardMonitor:
         self._on_change: Optional[Callable[[str], None]] = None
 
     def set_on_change(self, callback: Callable[[str], None]):
-        # вызывается при изменении содержимого буфера (спринт4 MON-1, пока простая заглушка)
+        """Регистрирует callback при изменении текста в буфере."""
         self._on_change = callback
 
     def start(self):
+        """Запускает daemon-поток поллинга (~0.5 с)."""
         if self._running:
             return
         self._running = True
@@ -28,6 +33,7 @@ class ClipboardMonitor:
         self._thread.start()
 
     def stop(self):
+        """Останавливает поллинг (флаг _running)."""
         self._running = False
 
     def _loop(self):

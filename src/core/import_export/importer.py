@@ -1,4 +1,4 @@
-# импорт с валидацией и режимами merge/replace/dry-run (спринт 6, IMP)
+"""Импорт хранилища: валидация, определение формата, merge/replace/dry-run."""
 
 import json
 import re
@@ -32,6 +32,8 @@ FIELD_LIMITS = {
 
 
 class ImportResult:
+    """Результат импорта: добавленные, обновлённые, пропущенные записи и ошибки."""
+
     def __init__(self):
         self.added: List[Dict[str, Any]] = []
         self.updated: List[Dict[str, Any]] = []
@@ -55,6 +57,15 @@ def _validate_entry(entry: Dict[str, Any]) -> bool:
 
 
 def detect_format(text: str, path: Optional[str] = None) -> str:
+    """Определяет формат файла импорта по содержимому и расширению.
+
+    Args:
+        text: Текст файла (UTF-8).
+        path: Путь к файлу (опционально, для подсказки по расширению).
+
+    Returns:
+        Идентификатор формата: encrypted_json, bitwarden, lastpass_csv, csv, share.
+    """
     stripped = text.strip()
     if stripped.startswith("{"):
         data = json.loads(stripped)
@@ -73,6 +84,8 @@ def detect_format(text: str, path: Optional[str] = None) -> str:
 
 
 class VaultImporter:
+    """Импорт записей из файлов с проверкой мастер-пароля и политикой дубликатов."""
+
     def __init__(
         self,
         *,
@@ -82,6 +95,15 @@ class VaultImporter:
         max_bytes: int = DEFAULT_MAX_BYTES,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ):
+        """Создаёт импортёр с колбэками CRUD и лимитами I/O.
+
+        Args:
+            create_entry: Функция создания записи в хранилище.
+            list_entries: Список существующих записей (для merge/дубликатов).
+            delete_all: Очистка хранилища (режим replace).
+            max_bytes: Максимальный размер файла.
+            timeout_sec: Таймаут чтения файла.
+        """
         self._create = create_entry
         self._list = list_entries or (lambda: [])
         self._delete_all = delete_all
@@ -103,6 +125,16 @@ class VaultImporter:
         export_password: str = "",
         private_key_pem: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Разбирает файл и возвращает список очищенных записей без записи в БД.
+
+        Args:
+            path: Путь к файлу импорта.
+            export_password: Пароль зашифрованного экспорта (encrypted_json).
+            private_key_pem: PEM закрытого ключа для RSA-обёртки.
+
+        Returns:
+            Список словарей полей записи (title, username, password, …).
+        """
         started = time.monotonic()
         p = Path(path)
         raw = self._guard_io(p, started)
@@ -131,7 +163,19 @@ class VaultImporter:
         duplicate_policy: str = "skip",
         private_key_pem: Optional[str] = None,
     ) -> ImportResult:
-        # mode: merge | replace | dry_run
+        """Импортирует файл в хранилище с проверкой мастер-пароля.
+
+        Args:
+            path: Путь к файлу.
+            mode: merge, replace или dry_run.
+            master_password: Мастер-пароль для доступа к хранилищу.
+            export_password: Пароль пакета encrypted_json.
+            duplicate_policy: skip или update при дубликатах.
+            private_key_pem: PEM закрытого ключа для расшифровки.
+
+        Returns:
+            ImportResult с итогами операции.
+        """
         if mode not in ("merge", "replace", "dry_run"):
             raise ValueError("mode должен быть merge, replace или dry_run")
         if not master_password or not verify_master_password(master_password):

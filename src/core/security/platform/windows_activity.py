@@ -1,4 +1,4 @@
-# Windows: GetLastInputInfo для авто-блокировки (спринт 7, PLAT-1)
+"""Windows idle detection via GetLastInputInfo. / Детектор простоя Windows (GetLastInputInfo)."""
 
 import ctypes
 import sys
@@ -9,7 +9,10 @@ from .fallback_activity import FallbackActivityDetector
 
 
 class WindowsActivityDetector(FallbackActivityDetector):
+    """Windows-specific activity detector; falls back to StateManager on error."""
+
     def __init__(self) -> None:
+        """Initialize Win32 APIs when on Windows. / Инициализация Win32 API на Windows."""
         self._last_input_ms: Optional[int] = None
         if sys.platform == "win32":
             try:
@@ -24,6 +27,7 @@ class WindowsActivityDetector(FallbackActivityDetector):
             self._user32 = None
 
     def has_recent_activity(self, threshold_sec: float = 2.0) -> bool:
+        """Return True if keyboard/mouse input within threshold. / True при недавнем вводе."""
         if self._user32 is None:
             return super().has_recent_activity(threshold_sec)
         try:

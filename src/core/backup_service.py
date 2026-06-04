@@ -1,4 +1,4 @@
-# резервное копирование и восстановление (спринт 8, PKG/backup)
+"""Vault backup and restore as .csafe.zip archives. / Резервное копирование и восстановление."""
 
 import hashlib
 import json
@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from core import config, events
+from database import db as database_db
 from database import models
 
 BACKUP_EXTENSION = ".csafe.zip"
@@ -27,36 +28,58 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+def _normalize_backup_dest(dest_path: str) -> str:
+    dest_path = (dest_path or "").strip()
+    low = dest_path.lower()
+    if low.endswith(BACKUP_EXTENSION):
+        return dest_path
+    if low.endswith(".zip"):
+        return dest_path
+    return dest_path + BACKUP_EXTENSION
+
+
 def _vault_db_path() -> str:
-    path = config.get(config.DB_PATH)
-    if not path or not os.path.isfile(path):
-        raise FileNotFoundError("База хранилища не найдена")
-    return path
+    raw = (config.get(config.DB_PATH) or "").strip()
+    if raw:
+        path = os.path.abspath(os.path.expanduser(os.path.expandvars(raw)))
+        if os.path.isfile(path):
+            return path
+    path = database_db.get_vault_path()
+    if os.path.isfile(path):
+        return path
+    raise FileNotFoundError("База хранилища не найдена")
 
 
 def create_backup(dest_path: str, *, include_config: bool = True) -> Dict[str, Any]:
-    vault_path = _vault_db_path()
-    if not dest_path.lower().endswith(".zip"):
-        dest_path = dest_path + BACKUP_EXTENSION
+    """Write signed zip backup; returns manifest. / Создаёт zip-архив резервной копии."""
+    dest_path = _normalize_backup_dest(dest_path)
+    parent = os.path.dirname(os.path.abspath(dest_path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
-    manifest: Dict[str, Any] = {
-        "format": "cryptosafe-backup-v1",
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "schema_version": models.SCHEMA_VERSION,
-        "vault_checksum": _sha256_file(vault_path),
-        "entry_count": _count_entries(vault_path),
-        "include_config": bool(include_config),
-    }
+    with tempfile.TemporaryDirectory(prefix="csafe-backup-") as tmp_dir:
+        snapshot = os.path.join(tmp_dir, VAULT_DB_NAME)
+        database_db.backup_vault_to(snapshot)
 
-    with zipfile.ZipFile(dest_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.write(vault_path, arcname=VAULT_DB_NAME)
-        if include_config:
-            cfg_path = config._config_path()
-            if os.path.isfile(cfg_path):
-                manifest["config_checksum"] = _sha256_file(cfg_path)
-                zf.write(cfg_path, arcname=CONFIG_DB_NAME)
-        zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+        manifest: Dict[str, Any] = {
+            "format": "cryptosafe-backup-v1",
+            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "schema_version": models.SCHEMA_VERSION,
+            "vault_checksum": _sha256_file(snapshot),
+            "entry_count": _count_entries(snapshot),
+            "include_config": bool(include_config),
+        }
 
+        with zipfile.ZipFile(dest_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(snapshot, arcname=VAULT_DB_NAME)
+            if include_config:
+                cfg_path = config._config_path()
+                if os.path.isfile(cfg_path):
+                    manifest["config_checksum"] = _sha256_file(cfg_path)
+                    zf.write(cfg_path, arcname=CONFIG_DB_NAME)
+            zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+
+    manifest["archive_path"] = dest_path
     events.publish(events.BackupCreated, sync=True, path=dest_path, entries=manifest.get("entry_count", 0))
     return manifest
 
@@ -73,6 +96,7 @@ def _count_entries(db_path: str) -> int:
 
 
 def validate_backup(archive_path: str) -> Dict[str, Any]:
+    """Verify backup format and vault checksum. / Проверяет архив и контрольную сумму."""
     if not os.path.isfile(archive_path):
         raise FileNotFoundError("Архив не найден")
     with zipfile.ZipFile(archive_path, "r") as zf:
@@ -96,11 +120,20 @@ def validate_backup(archive_path: str) -> Dict[str, Any]:
 
 
 def restore_backup(archive_path: str, *, restore_config: bool = False) -> Dict[str, Any]:
+    """Restore vault.db from validated archive. / Восстанавливает vault.db из архива."""
     manifest = validate_backup(archive_path)
     vault_path = _vault_db_path()
     backup_old = vault_path + ".before-restore"
     if os.path.isfile(vault_path):
         shutil.copy2(vault_path, backup_old)
+
+    database_db.close_all_connections()
+    try:
+        from core.audit.audit_logger import clear_chain_cache
+
+        clear_chain_cache()
+    except Exception:
+        pass
 
     with zipfile.ZipFile(archive_path, "r") as zf:
         with open(vault_path, "wb") as out:

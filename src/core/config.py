@@ -1,4 +1,4 @@
-# config: путь к хранилищу, соль, настройки интерфейса (отдельно от бд с паролями)
+"""App settings store (paths, salt, UI). / Настройки приложения в config.db."""
 
 import os
 import sqlite3
@@ -28,7 +28,7 @@ def _connect():
 
 
 def get(key, default=None):
-    # чтение настройки по ключу; при отсутствии возвращается default
+    """Read setting by key or default. / Читает настройку по ключу."""
     conn = _connect()
     cur = conn.cursor()
     cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
@@ -38,7 +38,7 @@ def get(key, default=None):
 
 
 def set(key, value):
-    # запись настройки в config; при существующем ключе выполняется перезапись
+    """Write or replace setting value. / Записывает настройку."""
     conn = _connect()
     cur = conn.cursor()
     cur.execute(
@@ -84,8 +84,7 @@ def _try_decode_salt(value):
 
 
 def get_vault_salt():
-    # соль для шифрования: сначала из переменной окружения CRYPTO_VAULT_SALT,
-    # иначе из config; если нигде нет — сохраняется дефолт и возвращается
+    """Return vault salt (env, config, or default). / Возвращает соль для шифрования."""
     salt = _try_decode_salt(os.environ.get("CRYPTO_VAULT_SALT"))
     if salt:
         return salt

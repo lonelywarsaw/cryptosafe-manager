@@ -1,4 +1,4 @@
-# профили безопасности Standard / Enhanced / Paranoid (спринт 7, CFG-1..3)
+"""Профили безопасности Standard / Enhanced / Paranoid и применение настроек."""
 
 from typing import Any, Dict, List, Tuple
 
@@ -41,7 +41,13 @@ _PROFILE_SETTINGS: Dict[str, Dict[str, str]] = {
 }
 
 
+def profile_settings(name: str) -> Dict[str, str]:
+    """Return preset config key/value dict for a profile name."""
+    return dict(_PROFILE_SETTINGS.get(name, {}))
+
+
 def describe_profile(name: str) -> str:
+    """Возвращает локализованное описание профиля."""
     try:
         from gui.strings import t
 
@@ -60,6 +66,11 @@ def describe_profile(name: str) -> str:
 
 
 def validate_profile(name: str) -> Tuple[bool, str]:
+    """Проверяет имя профиля и допустимость авто-блокировки.
+
+    Returns:
+        (успех, сообщение об ошибке).
+    """
     if name not in PROFILES:
         return False, "Неизвестный профиль"
     minutes = int(_PROFILE_SETTINGS[name].get(config.AUTO_LOCK_MINUTES, "5"))
@@ -69,6 +80,7 @@ def validate_profile(name: str) -> Tuple[bool, str]:
 
 
 def snapshot_current_settings() -> Dict[str, str]:
+    """Снимок текущих настроек, затрагиваемых профилями."""
     keys = set()
     for profile in _PROFILE_SETTINGS.values():
         keys.update(profile.keys())
@@ -77,6 +89,7 @@ def snapshot_current_settings() -> Dict[str, str]:
 
 
 def apply_profile(name: str, *, revert_on_error: bool = True) -> None:
+    """Применяет набор настроек профиля в config; при ошибке откатывает снимок."""
     ok, msg = validate_profile(name)
     if not ok:
         raise ValueError(msg)

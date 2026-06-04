@@ -1,4 +1,4 @@
-# безопасный шаринг одной записи (спринт 6, SHR)
+"""Безопасный обмен одной записью: пароль, публичный ключ, импорт share."""
 
 import json
 import secrets
@@ -18,6 +18,8 @@ SHARE_FORMAT = "cryptosafe-share-v1"
 
 
 class SharingService:
+    """Создание и импорт share-пакетов для одной записи хранилища."""
+
     def create_password_share(
         self,
         entry: Dict[str, Any],
@@ -27,6 +29,11 @@ class SharingService:
         expires_days: int = 7,
         permission: str = "read_only",
     ) -> Dict[str, Any]:
+        """Создаёт share-пакет, защищённый паролем получателя.
+
+        Returns:
+            Словарь пакета cryptosafe-share-v1.
+        """
         if permission not in ("read_only", "editable"):
             raise ValueError("permission: read_only или editable")
         if not 1 <= expires_days <= 30:
@@ -100,6 +107,7 @@ class SharingService:
         expires_days: int = 7,
         permission: str = "read_only",
     ) -> Dict[str, Any]:
+        """Создаёт share-пакет с обёрткой data_key через RSA-OAEP получателя."""
         _ = derive_export_material(purpose=SHARE_INFO)
         data_key = secrets.token_bytes(32)
         wrapped = wrap_key_for_public(data_key, recipient_public_key_pem)
@@ -150,6 +158,16 @@ class SharingService:
         share_password: str = "",
         private_key_pem: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Расшифровывает share-пакет и возвращает поля записи.
+
+        Args:
+            package: Share-пакет.
+            share_password: Пароль share (режим password).
+            private_key_pem: PEM закрытого ключа (режим rsa-oaep).
+
+        Returns:
+            Словарь полей записи с permission и temporary=True.
+        """
         if package.get("format") != SHARE_FORMAT:
             raise ValueError("Неверный формат share-пакета")
         meta = package.get("metadata") or {}
@@ -181,7 +199,11 @@ class SharingService:
         return entry
 
     def create_share_link_token(self, entry: Dict[str, Any], expires_days: int = 1) -> str:
-        # опциональный «link» без сети: токен на локальную расшифровку из пакета
+        """Формирует URL-safe токен с вложенным password-share (локальная доставка).
+
+        Returns:
+            Base64url-строка с JSON пакета.
+        """
         pkg = self.create_password_share(entry, secrets.token_urlsafe(16), expires_days=expires_days)
         import base64
 

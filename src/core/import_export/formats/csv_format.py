@@ -1,4 +1,4 @@
-# CSV экспорт/импорт (спринт 6, EXP-3)
+"""Plain CSV export/import for vault entries. / Открытый CSV экспорт/импорт записей хранилища."""
 
 import csv
 import io
@@ -8,6 +8,7 @@ CSV_FIELDS = ("title", "username", "password", "url", "category", "notes")
 
 
 def entries_to_csv(entries: List[Dict[str, Any]]) -> str:
+    """Serializes entries to a CSV string with standard columns. / Сериализует записи в CSV со стандартными колонками."""
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=CSV_FIELDS, extrasaction="ignore")
     writer.writeheader()
@@ -18,6 +19,7 @@ def entries_to_csv(entries: List[Dict[str, Any]]) -> str:
 
 
 def csv_to_entries(text: str) -> List[Dict[str, Any]]:
+    """Parses CSV text into a list of entry dictionaries. / Разбирает CSV-текст в список словарей записей."""
     buf = io.StringIO(text.strip())
     reader = csv.DictReader(buf)
     if not reader.fieldnames:

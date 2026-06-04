@@ -1,5 +1,9 @@
 # Спринт 6 — PERF-1..PERF-4 (TRD §13)
 
+import pytest
+
+pytestmark = pytest.mark.perf
+
 import json
 import os
 import sqlite3

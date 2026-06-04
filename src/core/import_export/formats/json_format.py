@@ -1,4 +1,4 @@
-# зашифрованный JSON — основной формат экспорта (спринт 6, EXP-2)
+"""Encrypted JSON export/import format (CryptoSafe export v1). / Формат зашифрованного JSON экспорта/импорта (CryptoSafe export v1)."""
 
 import base64
 import gzip
@@ -40,7 +40,7 @@ def build_encrypted_export(
     data_key: Optional[bytes] = None,
     recipient_public_key_pem: Optional[str] = None,
 ) -> Dict[str, Any]:
-    # data_key — одноразовый ключ данных (EXP-4); оборачивается паролем или RSA
+    """Builds an encrypted export package from vault entries. / Создаёт зашифрованный пакет экспорта из записей хранилища."""
     plain_entries: List[Dict[str, Any]] = []
     for e in entries:
         item = _normalize_entry(e, include_notes=include_notes)
@@ -97,6 +97,7 @@ def build_external_encrypted_export(
     data_key: Optional[bytes] = None,
     recipient_public_key_pem: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """Wraps external format text in an encrypted export envelope. / Оборачивает текст внешнего формата в зашифрованный экспорт."""
     payload = {
         "payload_kind": PAYLOAD_KIND_EXTERNAL,
         "external_format": external_format,
@@ -230,6 +231,7 @@ def parse_encrypted_export(
     *,
     private_key_pem: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
+    """Decrypts an export package and returns normalized vault entries. / Расшифровывает пакет экспорта и возвращает записи."""
     if package.get("format") != FORMAT_ID:
         raise ValueError("Неверный формат файла экспорта")
 

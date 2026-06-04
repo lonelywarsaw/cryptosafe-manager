@@ -1,4 +1,4 @@
-# безопасная работа с памятью: зануление, опциональная блокировка страниц (спринт 7, MEM-1/2)
+"""Безопасная работа с памятью: зануление, VirtualLock, SecretBuffer."""
 
 import ctypes
 import platform
@@ -7,6 +7,8 @@ from typing import Optional, Union
 
 
 class SecureMemory:
+    """Зануление буферов и блокировка страниц в RAM (Windows)."""
+
     def __init__(self) -> None:
         self._system = platform.system()
         self._win = None
@@ -17,6 +19,7 @@ class SecureMemory:
                 self._win = None
 
     def lock_page(self, buf: ctypes.Array) -> bool:
+        """Блокирует страницу в RAM (VirtualLock); False вне Windows."""
         if self._win is None:
             return False
         try:
@@ -25,6 +28,7 @@ class SecureMemory:
             return False
 
     def unlock_page(self, buf: ctypes.Array) -> None:
+        """Снимает VirtualLock со страницы."""
         if self._win is None:
             return
         try:
@@ -33,6 +37,7 @@ class SecureMemory:
             pass
 
     def secure_zero(self, buf: ctypes.Array) -> None:
+        """Обнуляет буфер (RtlSecureZeroMemory или memset)."""
         size = ctypes.sizeof(buf)
         if self._win is not None:
             try:
@@ -44,6 +49,7 @@ class SecureMemory:
 
 
 def secure_wipe_bytes(data: Union[bytearray, memoryview, bytes]) -> None:
+    """Затирает изменяемый буфер байтов нулями."""
     if data is None:
         return
     if isinstance(data, bytes):
@@ -58,6 +64,7 @@ def secure_wipe_bytes(data: Union[bytearray, memoryview, bytes]) -> None:
 
 
 def secure_wipe_str(text: str) -> None:
+    """Кодирует строку в bytearray, затирает и удаляет."""
     if not text:
         return
     buf = bytearray(text.encode("utf-8", errors="replace"))
@@ -66,9 +73,13 @@ def secure_wipe_str(text: str) -> None:
 
 
 class SecretBuffer:
-    """Кратковременное хранение секрета с занулением при выходе из контекста."""
+    """Кратковременное хранение секрета с занулением при close/exit."""
 
     def __init__(self, data: bytes, *, lock: bool = False) -> None:
+        """Args:
+            data: Секретные байты.
+            lock: Пытаться VirtualLock страницы (Windows).
+        """
         self._mem = SecureMemory()
         self._size = len(data)
         self._buf = (ctypes.c_char * self._size)()
@@ -77,9 +88,11 @@ class SecretBuffer:
             self._mem.lock_page(self._buf)
 
     def get_copy(self) -> bytes:
+        """Возвращает копию секрета (вызывающий должен затереть при необходимости)."""
         return bytes(self._buf)
 
     def close(self) -> None:
+        """Зануляет буфер и снимает блокировку страницы."""
         if hasattr(self, "_buf") and self._buf is not None:
             self._mem.secure_zero(self._buf)
             self._mem.unlock_page(self._buf)

@@ -1,4 +1,4 @@
-# мониторинг активности и авто-блокировка (спринт 7, ACT-1..4)
+"""Мониторинг активности пользователя и авто-блокировка по таймауту."""
 
 import platform
 import threading
@@ -21,7 +21,14 @@ def _create_detector():
 
 
 class ActivityMonitor:
+    """Фоновый монитор простоя и блокировки экрана с вызовом lock_callback."""
+
     def __init__(self, lock_callback: Callable[[], None], *, lock_timeout_sec: int = 300, check_interval: float = 1.0):
+        """Args:
+            lock_callback: Вызывается при превышении таймаута или lock экрана.
+            lock_timeout_sec: Порог простоя в секундах.
+            check_interval: Интервал опроса детектора.
+        """
         self._lock_callback = lock_callback
         self._lock_timeout_sec = max(1, int(lock_timeout_sec))
         self._check_interval = max(0.25, float(check_interval))
@@ -32,10 +39,12 @@ class ActivityMonitor:
         self._last_activity = time.time()
 
     def record_activity(self) -> None:
+        """Сбрасывает таймер последней активности."""
         with self._lock:
             self._last_activity = time.time()
 
     def start(self) -> None:
+        """Запускает фоновый поток мониторинга."""
         with self._lock:
             if self._monitoring:
                 return
@@ -44,6 +53,7 @@ class ActivityMonitor:
             self._thread.start()
 
     def stop(self) -> None:
+        """Останавливает мониторинг и ждёт завершения потока."""
         with self._lock:
             self._monitoring = False
         if self._thread:
@@ -51,6 +61,7 @@ class ActivityMonitor:
             self._thread = None
 
     def get_idle_seconds(self) -> float:
+        """Возвращает секунды с последней зафиксированной активности."""
         with self._lock:
             return time.time() - self._last_activity
 

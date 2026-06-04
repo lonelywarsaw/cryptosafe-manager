@@ -1,4 +1,4 @@
-# главное окно: меню (файл, правка, вид, справка), таблица записей, статус-бар, таймер буфера обмена
+"""Main window: vault table, menus, clipboard timer, tray integration. / Главное окно: таблица, меню, буфер, трей."""
 
 import sys
 import os
@@ -6,12 +6,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QMenuBar, QStatusBar,
     QLabel, QMessageBox, QFileDialog, QApplication, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QToolBar, QPushButton
+    QLineEdit, QHBoxLayout, QToolBar, QPushButton, QSizePolicy, QToolButton
 )
 from PyQt6.QtCore import QTimer, Qt, QEvent
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 
 import difflib
+import os
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from core import config
 from core.state_manager import get_state_manager
@@ -22,7 +24,9 @@ from core.vault.entry_manager import EntryManager
 from core.clipboard.clipboard_service import ClipboardService
 from core.clipboard.clipboard_monitor import ClipboardMonitor
 from core.clipboard.platform_adapter import create_platform_adapter
-from .strings import t
+from .strings import t, normalize_search_field
+from . import keyboard_shortcuts as kbd
+from .user_errors import user_facing_error
 from .widgets.secure_table import SecureTable
 from .import_export_dialogs import ExportDialog, ImportDialog, ShareDialog, QRViewerDialog
 from core.import_export.importer import VaultImporter
@@ -33,7 +37,10 @@ from .tray_icon import TrayController
 
 
 class MainWindow(QMainWindow):
+    """Primary application window for vault CRUD and session control. / Главное окно приложения: записи и сессия."""
+
     def __init__(self):
+        """Builds UI, services, tray, and security hooks. / Создаёт UI, сервисы, трей и обработчики безопасности."""
         super().__init__()
         sm = get_state_manager()
         self._buffer_seconds = int(config.get(config.CLIPBOARD_TIMEOUT, "30") or "30")
@@ -44,7 +51,7 @@ class MainWindow(QMainWindow):
         self._entry_manager = EntryManager(database_db, km, events)
         self._all_entries_cache: List[Dict] = []
         self._password_revealed: Dict[int, str] = {}  # entry_id -> plaintext password
-        self._password_widgets: Dict[int, Tuple[QLabel, QPushButton]] = {}
+        self._password_widgets: Dict[int, Tuple[QLabel, QToolButton]] = {}
         self._global_show_passwords = False
 
         # (спринт4) сервис буфера обмена; очистка по таймеру GUI — один раз, из главного потока
@@ -72,6 +79,18 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.hide)
 
     def eventFilter(self, obj, event):
+        """Records user activity for auto-lock on input events. / Учитывает активность пользователя для автоблокировки."""
+        if event.type() == QEvent.Type.KeyPress and obj is self._search:
+            key = event.key()
+            mods = event.modifiers()
+            if key == Qt.Key.Key_Escape:
+                self._search.clear()
+                event.accept()
+                return True
+            if key == Qt.Key.Key_Tab and mods == Qt.KeyboardModifier.NoModifier:
+                self._focus_vault_table()
+                event.accept()
+                return True
         if event.type() in (
             QEvent.Type.MouseMove,
             QEvent.Type.MouseButtonPress,
@@ -87,7 +106,7 @@ class MainWindow(QMainWindow):
         panic = get_panic_mode()
         panic.set_stealth_enabled(int(config.get(config.PANIC_STEALTH_MODE, "0") or "0") > 0)
         panic.register_handler(lambda: self._clipboard_service.clear(reason="panic"))
-        panic.register_handler(self._do_auto_lock)
+        panic.register_handler(lambda: self._do_auto_lock(reason="panic"))
         panic.register_handler(self._hide_for_panic)
         panic.register_stealth_handler(self._panic_fake_error)
 
@@ -120,6 +139,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self._do_auto_lock(reason="inactivity"))
 
     def show_from_tray(self):
+        """Restores and focuses the window from the system tray. / Восстанавливает и активирует окно из системного трея."""
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -141,7 +161,7 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def changeEvent(self, event):
-        # (CACHE-2, спринт2) при минимизации — автосброс ключа/блокировка
+        """Locks or hides the window on minimize per security settings. / Блокирует или скрывает окно при сворачивании."""
         super().changeEvent(event)
         try:
             if event.type() == QEvent.Type.WindowStateChange:
@@ -154,7 +174,7 @@ class MainWindow(QMainWindow):
             pass
 
     def focusOutEvent(self, event):
-        # (CACHE-2, спринт2) при потере фокуса — автосброс ключа/блокировка
+        """Locks the vault when the window loses focus if configured. / Блокирует хранилище при потере фокуса окна."""
         super().focusOutEvent(event)
         try:
             lock_on_focus = int(config.get(config.LOCK_ON_FOCUS_LOST, "1") or "1")
@@ -173,15 +193,29 @@ class MainWindow(QMainWindow):
         # (спринт3) поиск: realtime фильтр по полям с учётом опечаток
         self._search = QLineEdit()
         self._search.setPlaceholderText(t("search_placeholder"))
+        self._search.setAccessibleName(t("search_accessible"))
         self._search.textChanged.connect(self._on_search_changed)
+        self._search.installEventFilter(self)
         layout.addWidget(self._search)
+
+        self._empty_hint = QLabel()
+        self._empty_hint.setWordWrap(True)
+        self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_hint.hide()
+        layout.addWidget(self._empty_hint)
 
         self._table = SecureTable(self)
         # context menu (GUI-2 / GUI-3): правый клик по строке
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
+        self._table.cellDoubleClicked.connect(self._on_table_double_click)
+        self._table.row_edit_requested.connect(self._on_edit)
+        self._table.row_delete_requested.connect(self._on_delete)
+        self._table.focus_search_requested.connect(self._focus_search_field)
         self._load_table()
         layout.addWidget(self._table)
+        QWidget.setTabOrder(self._search, self._table)
+        QWidget.setTabOrder(self._table, self._search)
 
         # toolbar: глобальный toggle видимости паролей (GUI-3, спринт4: локализованный текст)
         self._toolbar = QToolBar(t("clipboard_toolbar_title"), self)
@@ -193,15 +227,61 @@ class MainWindow(QMainWindow):
         self._act_toggle_passwords.setShortcut("Ctrl+Shift+P")
         self._act_toggle_passwords.toggled.connect(self._on_global_toggle_passwords)
         self._toolbar.addAction(self._act_toggle_passwords)
+        self._setup_keyboard_shortcuts()
+
+    def _bind_shortcut(self, action: QAction, keys: str) -> None:
+        action.setShortcut(QKeySequence(keys))
+        action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+
+    def _setup_keyboard_shortcuts(self):
+        """UX-1: window shortcuts and table-only keys (Delete, F2, Enter)."""
+        sc = QShortcut(QKeySequence(kbd.KEY_FOCUS_SEARCH), self)
+        sc.setContext(Qt.ShortcutContext.WindowShortcut)
+        sc.activated.connect(self._on_focus_search)
+
+    def _on_focus_search(self):
+        self._focus_search_field()
+
+    def _focus_search_field(self):
+        self._search.setFocus(Qt.FocusReason.TabFocusReason)
+        self._search.selectAll()
+
+    def _focus_vault_table(self):
+        self._table.setFocus(Qt.FocusReason.TabFocusReason)
+        if self._table.rowCount() <= 0:
+            return
+        row = self._table.currentRow()
+        if row < 0:
+            row = 0
+        self._table.selectRow(row)
+        self._table.setCurrentCell(row, 0)
+
+    def _on_lock_session(self):
+        if not get_state_manager().is_locked():
+            self._do_auto_lock(reason="shortcut")
+
+    def _on_keyboard_shortcuts_help(self):
+        QMessageBox.information(self, t("keyboard_shortcuts"), kbd.format_shortcuts_help())
+
+    def _on_table_double_click(self, _row: int, _col: int):
+        self._on_edit()
 
     def _refresh_localized_ui(self):
         self._search.setPlaceholderText(t("search_placeholder"))
+        if hasattr(self, "_empty_hint") and self._empty_hint.isVisible():
+            query = (self._search.text() or "").strip()
+            if query:
+                self._empty_hint.setText(t("vault_empty_search"))
+            elif not self._all_entries_cache:
+                self._empty_hint.setText(f"{t('vault_empty')}\n{t('vault_empty_hint')}")
         if hasattr(self, "_toolbar"):
             self._toolbar.setWindowTitle(t("clipboard_toolbar_title"))
         if hasattr(self, "_act_toggle_passwords"):
             self._act_toggle_passwords.setText(t("clipboard_toolbar_show_passwords"))
         for entry_id, (_label, btn) in self._password_widgets.items():
-            btn.setText(t("password_hide") if entry_id in self._password_revealed else t("password_show"))
+            shown = entry_id in self._password_revealed
+            btn.setText(t("password_btn_hide") if shown else t("password_btn_show"))
+            btn.setToolTip(t("password_hide") if shown else t("password_show"))
 
     def _build_menu(self):
         menubar = self.menuBar()
@@ -212,27 +292,40 @@ class MainWindow(QMainWindow):
         file_menu.addAction(t("s6_import"), self._on_import_vault)
         file_menu.addAction(t("s6_share"), self._on_share_entry)
         file_menu.addAction(t("s6_qr_viewer"), self._on_qr_viewer)
-        file_menu.addAction(t("unlock"), self._on_unlock)
+        act_unlock = file_menu.addAction(t("unlock"), self._on_unlock)
+        self._bind_shortcut(act_unlock, kbd.KEY_UNLOCK)
+        act_lock = file_menu.addAction(t("lock_session"), self._on_lock_session)
+        self._bind_shortcut(act_lock, kbd.KEY_LOCK)
         file_menu.addAction(t("backup"), self._on_backup)
         file_menu.addAction(t("restore_backup"), self._on_restore_backup)
         file_menu.addSeparator()
         file_menu.addAction(t("exit"), self._quit_app)
         edit_menu = menubar.addMenu(t("edit"))
-        edit_menu.addAction(t("add"), self._on_add)
-        edit_menu.addAction(t("edit_"), self._on_edit)
-        edit_menu.addAction(t("delete"), self._on_delete)
+        act_add = edit_menu.addAction(t("add"), self._on_add)
+        self._bind_shortcut(act_add, kbd.KEY_ADD)
+        act_edit = edit_menu.addAction(t("edit_"), self._on_edit)
+        self._bind_shortcut(act_edit, kbd.KEY_EDIT)
+        act_del = edit_menu.addAction(t("delete"), self._on_delete)
+        act_del.setShortcut(QKeySequence())
         edit_menu.addSeparator()
-        edit_menu.addAction(t("copy_login"), self._on_copy_login)
-        edit_menu.addAction(t("copy_password"), self._on_copy_password)
-        edit_menu.addAction(t("clipboard_copy_all"), self._on_copy_all)
-        edit_menu.addAction(t("clipboard_manual_clear"), self._on_clear_clipboard)
+        act_copy_login = edit_menu.addAction(t("copy_login"), self._on_copy_login)
+        self._bind_shortcut(act_copy_login, kbd.KEY_COPY_LOGIN)
+        act_copy_pwd = edit_menu.addAction(t("copy_password"), self._on_copy_password)
+        self._bind_shortcut(act_copy_pwd, kbd.KEY_COPY_PASSWORD)
+        act_copy_all = edit_menu.addAction(t("clipboard_copy_all"), self._on_copy_all)
+        self._bind_shortcut(act_copy_all, kbd.KEY_COPY_ALL)
+        act_clear_clip = edit_menu.addAction(t("clipboard_manual_clear"), self._on_clear_clipboard)
+        self._bind_shortcut(act_clear_clip, kbd.KEY_CLEAR_CLIPBOARD)
         edit_menu.addSeparator()
         edit_menu.addAction(t("change_password_title"), self._on_change_password)
         view_menu = menubar.addMenu(t("view"))
-        view_menu.addAction(t("logs"), self._on_logs)
-        view_menu.addAction(t("settings"), self._on_settings)
+        act_logs = view_menu.addAction(t("logs"), self._on_logs)
+        self._bind_shortcut(act_logs, kbd.KEY_AUDIT_LOG)
+        act_settings = view_menu.addAction(t("settings"), self._on_settings)
+        self._bind_shortcut(act_settings, kbd.KEY_SETTINGS)
         view_menu.addAction(t("state_monitor"), self._on_state_monitor)
         help_menu = menubar.addMenu(t("help"))
+        help_menu.addAction(t("keyboard_shortcuts"), self._on_keyboard_shortcuts_help)
         help_menu.addAction(t("about"), self._on_about)
 
     def _build_status_bar(self):
@@ -270,7 +363,7 @@ class MainWindow(QMainWindow):
         if auto_lock_min > 0 and not sm.is_locked() and sm.get_inactivity_seconds() >= auto_lock_min * 60:
             self._do_auto_lock(reason="inactivity")
 
-    def _do_auto_lock(self, reason: str = "inactivity"):
+    def _do_auto_lock(self, reason: str = "inactivity", *, show_message: bool = True):
         from core.key_manager import clear_encryption_key
         if hasattr(self, "_status_label") and not self._status_label:
             return
@@ -289,13 +382,16 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_tray"):
             self._tray.update_status()
         # чтобы тесты не зависали из-за модального окна
+        if reason == "panic" or not show_message:
+            return
         try:
             import sys
             if "pytest" in sys.modules:
                 return
         except Exception:
             pass
-        QMessageBox.information(self, t("app_title"), t("session_locked_inactivity"))
+        msg_key = "session_locked_inactivity" if reason == "inactivity" else "session_locked_manual"
+        QMessageBox.information(self, t("app_title"), t(msg_key))
 
     def _on_unlock(self):
         get_state_manager().touch_activity()
@@ -305,11 +401,13 @@ class MainWindow(QMainWindow):
             self.set_locked(False)
 
     def reset_buffer_timer(self):
+        """Resets the clipboard auto-clear countdown in the status bar. / Сбрасывает таймер автоочистки буфера обмена."""
         sm = get_state_manager()
         sm.reset_clipboard_timer()
         self._buffer_label.setText(t("buffer_timer") % str(sm.get_clipboard_seconds_left()))
 
     def set_locked(self, locked):
+        """Updates locked state in UI and tray after unlock/lock. / Обновляет состояние блокировки в UI и трее."""
         get_state_manager().set_locked(locked)
         self._status_label.setText(t("status_locked") if locked else t("status_unlocked"))
         if hasattr(self, "_tray"):
@@ -328,16 +426,22 @@ class MainWindow(QMainWindow):
             item = selected[0]
         return item.data(Qt.ItemDataRole.UserRole)
 
-    def _show_error(self):
-        # показ общего сообщения об ошибке (без деталей, чтобы не светить реализацию)
-        # (спринт3) если тесты под pytest — не показываем модальное окно, чтобы не блокировать run
+    def _show_error(self, exc=None):
+        # POL-3: без трассировок и внутренних путей
         try:
             import sys
             if "pytest" in sys.modules:
                 return
         except Exception:
             pass
-        QMessageBox.warning(self, t("app_title"), t("error_generic"))
+        QMessageBox.warning(self, t("app_title"), user_facing_error(exc))
+
+    def _require_unlocked(self) -> bool:
+        """POL-4: блокируем изменения данных в заблокированной сессии."""
+        if get_state_manager().is_locked():
+            QMessageBox.information(self, t("app_title"), t("session_locked_action"))
+            return False
+        return True
 
     def _touch_and_open_side_window(self, window_class, title_key, width=400, height=300):
         # обновляется время активности; открывается боковое окно (журнал, монитор состояния) справа от главного
@@ -368,18 +472,28 @@ class MainWindow(QMainWindow):
 
     def _on_backup(self):
         get_state_manager().touch_activity()
+        default_name = f"cryptosafe-backup-{datetime.now().strftime('%Y%m%d-%H%M')}.csafe.zip"
         path, _ = QFileDialog.getSaveFileName(
-            self, t("backup"), "", "CryptoSafe backup (*.csafe.zip);;All files (*.*)"
+            self,
+            t("backup"),
+            default_name,
+            f"{t('backup_save_filter')};;All files (*.*)",
         )
         if not path:
             return
         try:
             manifest = create_backup(path, include_config=True)
+            archive = manifest.get("archive_path", path)
             QMessageBox.information(
-                self, t("backup"), t("backup_ok") % f"{path} ({manifest.get('entry_count', 0)} entries)"
+                self,
+                t("backup"),
+                t("backup_ok")
+                % f"{archive}\n{t('title')}: {manifest.get('entry_count', 0)}",
             )
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            from .user_errors import format_operation_error
+
+            QMessageBox.warning(self, t("backup"), format_operation_error(exc, context="backup"))
 
     def _on_restore_backup(self):
         get_state_manager().touch_activity()
@@ -395,11 +509,21 @@ class MainWindow(QMainWindow):
             return
         try:
             restore_backup(path, restore_config=False)
-            self._do_auto_lock(reason="restore")
+            self._password_revealed.clear()
+            self._do_auto_lock(reason="restore", show_message=False)
             QMessageBox.information(self, t("restore_backup"), t("restore_ok"))
-            self._load_table()
-        except Exception:
-            self._show_error()
+            from .unlock_dialog import UnlockDialog
+
+            if UnlockDialog(self, after_restore=True).exec():
+                self.set_locked(False)
+                self._load_table()
+            else:
+                self._all_entries_cache = []
+                self._apply_search_filter_and_fill()
+        except Exception as exc:
+            from .user_errors import format_operation_error
+
+            QMessageBox.warning(self, t("restore_backup"), format_operation_error(exc, context="backup"))
 
     def _fill_table(self, rows):
         # таблица заполняется списком уже расшифрованных метаданных (пароль не держим)
@@ -432,44 +556,71 @@ class MainWindow(QMainWindow):
             t4.setData(Qt.ItemDataRole.UserRole, entry_id)
             self._table.setItem(i, 4, t4)
 
-            # GUI-3: (eye icon) — ячейка пароля
             cell = QWidget()
             hb = QHBoxLayout(cell)
-            hb.setContentsMargins(0, 0, 0, 0)
+            hb.setContentsMargins(4, 0, 4, 0)
+            hb.setSpacing(2)
             label = QLabel(masked_password)
-            btn = QPushButton(t("password_show"))
-            btn.setMinimumWidth(72)
-            hb.addWidget(label)
-            hb.addWidget(btn)
-
+            label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            btn = QToolButton(cell)
+            btn.setObjectName("passwordToggleBtn")
+            btn.setText(t("password_btn_show"))
+            btn.setToolTip(t("password_show"))
+            btn.setAutoRaise(True)
+            btn.setFixedSize(46, 22)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setProperty("entry_id", entry_id)
             btn.clicked.connect(self._on_eye_clicked)
+            hb.addWidget(label, 1)
+            hb.addWidget(btn, 0)
 
+            self._table.setRowHeight(i, 30)
             self._table.setCellWidget(i, 5, cell)
             self._password_widgets[entry_id] = (label, btn)
 
     def _load_table(self):
+        if get_state_manager().is_locked():
+            self._all_entries_cache = []
+            self._apply_search_filter_and_fill()
+            return
         try:
             self._all_entries_cache = self._entry_manager.get_all_entries()
             self._apply_search_filter_and_fill()
-        except Exception:
-            self._show_error()
-            self._table.setRowCount(0)
+        except Exception as exc:
+            self._show_error(exc)
+            self._all_entries_cache = []
+            self._apply_search_filter_and_fill()
 
     def _apply_search_filter_and_fill(self):
         query = (self._search.text() or "").strip()
         if not query:
-            self._fill_table(self._all_entries_cache)
+            rows = self._all_entries_cache
+        else:
+            rows = self._filter_entries(query, self._all_entries_cache)
+        self._fill_table(rows)
+        self._update_empty_state(rows, bool(query))
+
+    def _update_empty_state(self, rows: List[Dict], has_search: bool) -> None:
+        if rows:
+            self._empty_hint.hide()
+            self._table.show()
             return
-        filtered = self._filter_entries(query, self._all_entries_cache)
-        self._fill_table(filtered)
+        self._table.setRowCount(0)
+        self._table.show()
+        if has_search:
+            self._empty_hint.setText(t("vault_empty_search"))
+        elif not self._all_entries_cache:
+            self._empty_hint.setText(f"{t('vault_empty')}\n{t('vault_empty_hint')}")
+        else:
+            self._empty_hint.setText(t("vault_empty_search"))
+        self._empty_hint.show()
 
     def _on_search_changed(self, _):
         # SEARCH-2: realtime обновление результатов
         try:
             self._apply_search_filter_and_fill()
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _similarity(self, a: str, b: str) -> float:
         # fuzzy matching: опечатки → приблизительное совпадение
@@ -509,8 +660,9 @@ class MainWindow(QMainWindow):
                 k, v = tok.split(":", 1)
                 k = k.strip().lower()
                 v = v.strip()
-                if k in ("title", "username", "url", "notes"):
-                    field_filters.append((k, v))
+                field_key = normalize_search_field(k)
+                if field_key:
+                    field_filters.append((field_key, v))
                     continue
             terms.append(tok)
 
@@ -563,7 +715,8 @@ class MainWindow(QMainWindow):
         label, btn = widget
         if not show:
             label.setText("••••••••")
-            btn.setText(t("password_show"))
+            btn.setText(t("password_btn_show"))
+            btn.setToolTip(t("password_show"))
             if entry_id in self._password_revealed:
                 # убираем ссылку на plaintext (SEC-1: не держим постоянно)
                 del self._password_revealed[entry_id]
@@ -575,15 +728,14 @@ class MainWindow(QMainWindow):
             pwd = entry.get("password") or ""
             self._password_revealed[entry_id] = pwd
             label.setText(pwd)
-            btn.setText(t("password_hide"))
-        except Exception:
-            # без деталей (SEC-4)
-            self._show_error()
+            btn.setText(t("password_btn_hide"))
+            btn.setToolTip(t("password_hide"))
+        except Exception as exc:
+            self._show_error(exc)
 
     def _on_eye_clicked(self):
-        # GUI-3: переключение видимости пароля через кнопку-глаз
         btn = self.sender()
-        if not isinstance(btn, QPushButton):
+        if not isinstance(btn, QToolButton):
             return
         entry_id = int(btn.property("entry_id"))
         is_shown = entry_id in self._password_revealed
@@ -670,6 +822,8 @@ class MainWindow(QMainWindow):
             self._on_delete(entry_id_override=entry_id)
 
     def _on_add(self):
+        if not self._require_unlocked():
+            return
         get_state_manager().touch_activity()
         try:
             from .entry_dialog import EntryDialog
@@ -679,10 +833,12 @@ class MainWindow(QMainWindow):
             data = d.get_data()
             self._entry_manager.create_entry(data)
             self._load_table()
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _on_edit(self, entry_id_override=None):
+        if not self._require_unlocked():
+            return
         get_state_manager().touch_activity()
         entry_id = entry_id_override if entry_id_override is not None else self._get_selected_entry_id()
         if entry_id is None:
@@ -706,10 +862,12 @@ class MainWindow(QMainWindow):
             data = d.get_data()
             self._entry_manager.update_entry(entry_id, data)
             self._load_table()
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _on_delete(self, entry_id_override=None):
+        if not self._require_unlocked():
+            return
         get_state_manager().touch_activity()
         entry_id = entry_id_override if entry_id_override is not None else self._get_selected_entry_id()
         if entry_id is None:
@@ -724,12 +882,12 @@ class MainWindow(QMainWindow):
         try:
             self._entry_manager.delete_entry(entry_id, soft_delete=True)
             self._load_table()
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _copy_to_clipboard(self, entry_id, text, kind):
         if get_state_manager().is_locked():
-            QMessageBox.warning(self, t("app_title"), t("error_generic"))
+            QMessageBox.information(self, t("app_title"), t("session_locked_action"))
             return
         data_type = {"password": "password", "all": "all", "login": "username"}.get(kind, "text")
         self._clipboard_service.copy_text(text or "", data_type=data_type, source_entry_id=entry_id)
@@ -739,16 +897,16 @@ class MainWindow(QMainWindow):
         try:
             entry = self._entry_manager.get_entry(entry_id)
             self._copy_to_clipboard(entry_id, (entry.get("username", "") or "").strip(), "login")
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _copy_selected_password(self, entry_id: int):
         get_state_manager().touch_activity()
         try:
             entry = self._entry_manager.get_entry(entry_id)
             self._copy_to_clipboard(entry_id, entry.get("password", "") or "", "password")
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _copy_selected_all(self, entry_id: int):
         get_state_manager().touch_activity()
@@ -764,8 +922,8 @@ class MainWindow(QMainWindow):
                 ]
             ).strip()
             self._copy_to_clipboard(entry_id, data, "all")
-        except Exception:
-            self._show_error()
+        except Exception as exc:
+            self._show_error(exc)
 
     def _on_copy_login(self):
         entry_id = self._get_selected_entry_id()
@@ -828,7 +986,12 @@ class MainWindow(QMainWindow):
         return list(selected_ids)
 
     def _on_export_vault(self):
+        if not self._require_unlocked():
+            return
         get_state_manager().touch_activity()
+        if not self._all_entries_cache:
+            QMessageBox.information(self, t("s6_export"), t("vault_empty"))
+            return
         dlg = ExportDialog(self, lambda: [self._entry_manager.get_entry(r["id"]) for r in self._all_entries_cache], self._selected_entry_ids())
         dlg.exec()
 
@@ -910,7 +1073,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._clipboard_service.clear_if_active_data_replaced)
 
     def closeEvent(self, event):
-        # Закрытие окна (крестик) — полный выход; в трей только при сворачивании (см. changeEvent)
+        """Quits the application and cleans up clipboard and tray. / Завершает приложение и очищает буфер и трей."""
         event.accept()
         self._cleanup_on_exit()
         QApplication.quit()

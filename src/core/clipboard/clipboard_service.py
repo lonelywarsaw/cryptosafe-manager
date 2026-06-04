@@ -1,4 +1,4 @@
-# единая точка работы с буфером обмена; таймер только в StateManager
+"""Secure clipboard copy with auto-clear timer. / Буфер обмена: копирование и автоочистка."""
 
 import secrets
 import threading
@@ -8,6 +8,8 @@ from typing import Callable, Dict, List, Optional
 from core import events
 from core import config
 from core.state_manager import get_state_manager
+from . import clipboard_policy
+from .foreground_process import get_foreground_process_name
 from .platform_adapter import ClipboardAdapter
 from .secure_buffer import digest_text, wipe_bytearray
 
@@ -30,7 +32,10 @@ class _ActiveClip:
 
 
 class ClipboardService:
+    """Copy secrets to clipboard and clear on timeout. / Копирует секреты и очищает по таймеру."""
+
     def __init__(self, platform_adapter: ClipboardAdapter):
+        """Attach platform clipboard adapter. / Подключает адаптер буфера ОС."""
         self._platform = platform_adapter
         self._current: Optional[_ActiveClip] = None
         self._lock = threading.RLock()
@@ -38,9 +43,11 @@ class ClipboardService:
 
     @property
     def adapter(self) -> ClipboardAdapter:
+        """Underlying platform clipboard adapter. / Адаптер буфера платформы."""
         return self._platform
 
     def subscribe(self, callback: Callable[[Dict], None]):
+        """Register status observer callback. / Подписывает наблюдателя статуса."""
         with self._lock:
             self._observers.append(callback)
 
@@ -53,6 +60,7 @@ class ClipboardService:
                 continue
 
     def copy_text(self, data: str, data_type: str = "text", source_entry_id: Optional[int] = None):
+        """Copy text to clipboard and start clear timer. / Копирует текст и запускает таймер."""
         with self._lock:
             self._clear_internal(reason="replace", publish=False)
             plain_data = data or ""
@@ -81,10 +89,12 @@ class ClipboardService:
             self._notify_observers()
 
     def clear(self, reason: str = "manual"):
+        """Clear clipboard and reset timer. / Очищает буфер и сбрасывает таймер."""
         with self._lock:
             self._clear_internal(reason=reason)
 
     def get_status(self) -> Dict:
+        """Return active clipboard staging status. / Статус активного копирования."""
         with self._lock:
             if not self._current:
                 return {"active": False, "staged": False}
@@ -99,13 +109,25 @@ class ClipboardService:
             }
 
     def clear_if_active_data_replaced(self):
+        """Clear if user changed clipboard externally. / Очищает при внешней подмене буфера."""
         with self._lock:
             if not self._current:
                 return
-            content = self._platform.get_clipboard_content()
-            if content is None:
+            level = clipboard_policy.get_security_level()
+            if not clipboard_policy.monitors_external_clipboard(level):
                 return
-            if digest_text(content) != self._current.content_digest:
+            content = self._platform.get_clipboard_content()
+            clipboard_empty = content is None or content == ""
+            digest_matches = (
+                not clipboard_empty and digest_text(content) == self._current.content_digest
+            )
+            foreground = get_foreground_process_name()
+            if clipboard_policy.should_clear_on_external_change(
+                level=level,
+                digest_matches=digest_matches,
+                clipboard_empty=clipboard_empty,
+                foreground_process=foreground,
+            ):
                 self._clear_internal(reason="external_change")
 
     def _clear_internal(self, reason: str, publish: bool = True):
@@ -134,7 +156,7 @@ class ClipboardService:
             timeout = 5
         if timeout > 300:
             timeout = 300
-        return timeout
+        return clipboard_policy.effective_clipboard_timeout(timeout)
 
     @staticmethod
     def _obfuscate_bytes(data: str, mask: bytes) -> bytes:

@@ -1,4 +1,4 @@
-# при каждом запуске запрашивается мастер-пароль; спринт 2: проверка по Argon2, вывод ключа, кэш, backoff
+"""Unlock dialog: master password verification and key derivation. / Диалог разблокировки: проверка пароля и вывод ключа."""
 
 import sys
 import os
@@ -20,14 +20,21 @@ from .widgets.password_entry import PasswordEntry
 
 
 class UnlockDialog(QDialog):
-    def __init__(self, parent=None):
+    """Modal login dialog shown at startup and from tray unlock. / Модальный вход при запуске и разблокировке из трея."""
+
+    def __init__(self, parent=None, *, after_restore: bool = False):
+        """Builds master password field and OK/cancel actions. / Создаёт поле мастер-пароля и кнопки OK/Отмена."""
         super().__init__(parent)
+        self._after_restore = after_restore
         self.setWindowTitle(t("app_title") + " — " + t("login_title"))
         self.setMinimumSize(420, 200)
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.addWidget(QLabel(t("enter_master_password")))
+        prompt = t("enter_master_password")
+        if after_restore:
+            prompt = f"{prompt}\n\n{t('restore_wrong_password_hint')}"
+        layout.addWidget(QLabel(prompt))
         self._password = PasswordEntry(self)
         layout.addWidget(self._password)
         btns = QHBoxLayout()
@@ -65,7 +72,15 @@ class UnlockDialog(QDialog):
         stored_hash = auth_blob.decode("utf-8")
         if not verify_password(stored_hash, pwd):
             record_login_failure()
-            QMessageBox.warning(self, t("login_title"), t("wrong_password"))
+            n_fail = get_failed_attempt_count()
+            msg = (
+                t("wrong_password_attempts") % n_fail
+                if n_fail >= 2
+                else t("wrong_password")
+            )
+            if self._after_restore:
+                msg = f"{msg}\n\n{t('restore_wrong_password_hint')}"
+            QMessageBox.warning(self, t("login_title"), msg)
             return
         salt_blob = database_db.get_key_store("enc_salt")
         if not salt_blob:
@@ -91,4 +106,5 @@ class UnlockDialog(QDialog):
         self.accept()
 
     def get_password(self):
+        """Returns the entered master password text. / Возвращает введённый текст мастер-пароля."""
         return self._password.text()

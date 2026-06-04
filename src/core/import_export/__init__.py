@@ -1,3 +1,5 @@
+"""Vault import/export public API: exporters, importers, sharing, QR. / Публичный API импорта/экспорта: экспорт, импорт, share, QR."""
+
 from .exporter import ExportOptions, VaultExporter
 from .importer import ImportResult, VaultImporter
 from .sharing_service import SharingService

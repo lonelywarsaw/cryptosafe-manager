@@ -1,4 +1,4 @@
-# проверка мастер-пароля через Argon2, валидатор силы пароля и учёт сессии входа
+"""Проверка мастер-пароля, валидация силы и учёт сессии входа."""
 
 import re
 from typing import Tuple
@@ -27,7 +27,11 @@ COMMON_PASSWORDS = frozenset(
 
 
 def validate_password_strength(password: str) -> Tuple[bool, str]:
-    # проверка силы пароля: не короче 12 символов, есть все типы символов, не из популярных
+    """Проверяет силу мастер-пароля (длина, классы символов, не из списка простых).
+
+    Returns:
+        (успех, сообщение об ошибке или пустая строка).
+    """
     if not password or len(password) < MIN_PASSWORD_LEN:
         return False, "Пароль не менее 12 символов"
     if password.lower().strip() in COMMON_PASSWORDS:
@@ -49,11 +53,12 @@ _failed_attempt_count = 0
 
 
 def verify_password(stored_hash: str, password: str) -> bool:
-    # проверка пароля через Argon2; сравнение делается библиотекой в постоянное время
+    """Проверяет пароль против сохранённого Argon2-хеша."""
     return verify_password_argon2(stored_hash, password)
 
 
 def verify_master_password(password: str) -> bool:
+    """Проверяет мастер-пароль по auth_hash из key_store."""
     from database import db as database_db
 
     auth_blob = database_db.get_key_store("auth_hash")
@@ -64,7 +69,7 @@ def verify_master_password(password: str) -> bool:
 
 
 def record_login_success():
-    # после успешного входа запоминается время входа, активность и обнуляется счётчик ошибок
+    """Фиксирует успешный вход: время входа, активность, сброс счётчика ошибок."""
     global _login_timestamp, _last_activity_timestamp, _failed_attempt_count
     import time
 
@@ -74,18 +79,18 @@ def record_login_success():
 
 
 def record_login_failure():
-    # при каждом неверном вводе увеличивается счётчик неудачных попыток
+    """Увеличивает счётчик неудачных попыток входа."""
     global _failed_attempt_count
     _failed_attempt_count += 1
 
 
 def get_failed_attempt_count():
-    # сколько подряд было неудачных попыток входа (для backoff)
+    """Возвращает число подряд неудачных попыток (для backoff)."""
     return _failed_attempt_count
 
 
 def record_activity():
-    # любое действие пользователя обновляет время последней активности
+    """Обновляет время последней активности пользователя."""
     global _last_activity_timestamp
     import time
 
@@ -93,11 +98,11 @@ def record_activity():
 
 
 def get_login_timestamp():
-    # время успешного входа
+    """Возвращает время успешного входа (unix) или None."""
     return _login_timestamp
 
 
 def get_last_activity_timestamp():
-    # время последнего действия
+    """Возвращает время последней активности (unix) или None."""
     return _last_activity_timestamp
 

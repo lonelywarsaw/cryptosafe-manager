@@ -1,10 +1,11 @@
-# совместимость с JSON Bitwarden (спринт 6, EXP-4)
+"""Bitwarden JSON import/export compatibility layer. / Слой совместимости импорта/экспорта JSON Bitwarden."""
 
 import json
 from typing import Any, Dict, List
 
 
 def entries_to_bitwarden(entries: List[Dict[str, Any]]) -> str:
+    """Converts vault entries to unencrypted Bitwarden JSON. / Преобразует записи хранилища в открытый JSON Bitwarden."""
     items = []
     for e in entries:
         items.append(
@@ -24,6 +25,7 @@ def entries_to_bitwarden(entries: List[Dict[str, Any]]) -> str:
 
 
 def bitwarden_to_entries(text: str) -> List[Dict[str, Any]]:
+    """Parses unencrypted Bitwarden JSON into vault entry dicts. / Разбирает открытый JSON Bitwarden в словари записей."""
     data = json.loads(text)
     if data.get("encrypted"):
         raise ValueError("Зашифрованный экспорт Bitwarden не поддерживается")

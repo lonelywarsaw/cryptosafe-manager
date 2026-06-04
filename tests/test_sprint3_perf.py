@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.perf
+
 import difflib
 import os
 import tempfile

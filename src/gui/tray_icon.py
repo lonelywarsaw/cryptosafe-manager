@@ -1,4 +1,4 @@
-# иконка в системном трее (спринт 7, TRAY-1..4)
+"""System tray icon controller for lock, unlock, and panic actions. / Контроллер иконки трея: блокировка, разблокировка, паника."""
 
 import sys
 import os
@@ -13,16 +13,21 @@ from .strings import t
 
 
 class TrayController:
+    """Manages system tray icon, menu, and notifications. / Управляет иконкой трея, меню и уведомлениями."""
+
     def __init__(self, main_window) -> None:
+        """Attaches to the main window and checks tray availability. / Привязывается к главному окну и проверяет доступность трея."""
         self._window = main_window
         self._tray = None
         self._available = QSystemTrayIcon.isSystemTrayAvailable()
 
     @property
     def available(self) -> bool:
+        """Whether the system tray is available on this platform. / Доступен ли системный трей на этой платформе."""
         return self._available
 
     def setup(self) -> None:
+        """Creates tray icon, context menu, and initial tooltip. / Создаёт иконку трея, контекстное меню и подсказку."""
         if not self._available:
             return
         self._tray = QSystemTrayIcon(self._window)
@@ -47,6 +52,7 @@ class TrayController:
         self.update_status()
 
     def update_status(self) -> None:
+        """Refreshes tray tooltip from current lock state. / Обновляет подсказку трея по текущему состоянию блокировки."""
         if not self._tray:
             return
         from core.state_manager import get_state_manager
@@ -59,5 +65,6 @@ class TrayController:
             self._window.show_from_tray()
 
     def notify(self, message: str) -> None:
+        """Shows a short balloon notification from the tray icon. / Показывает короткое уведомление из иконки трея."""
         if self._tray:
             self._tray.showMessage(t("app_title"), message, QSystemTrayIcon.MessageIcon.Information, 3000)

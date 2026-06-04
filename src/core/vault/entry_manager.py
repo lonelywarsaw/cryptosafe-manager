@@ -1,3 +1,5 @@
+"""Vault entry CRUD with encryption and events. / CRUD записей хранилища с шифрованием."""
+
 from typing import Any, Dict, List
 from datetime import datetime
 from urllib.parse import urlparse
@@ -39,17 +41,17 @@ def _format_date_from_ts(ts_value) -> str:
 
 
 class EntryManager:
-    # Контроллер CRUD (спринт3).
-    # Он шифрует/дешифрует через EncryptionServiceAESGCM,
-    # а ключ берётся из KeyManager (кэш после PBKDF2).
+    """CRUD controller: encrypt via AES-GCM, publish events. / CRUD с AES-GCM и событиями."""
+
     def __init__(self, db_module, key_manager, event_module):
+        """Wire database, keys, and event bus. / Подключает БД, ключи и шину событий."""
         self._db = db_module
         self._key_manager = key_manager
         self._events = event_module
         self._crypto = EncryptionServiceAESGCM(key_manager)
 
     def create_entry(self, data_dict: Dict[str, Any]) -> Dict[str, Any]:
-        # транзакция: db.py сам коммитит по завершению операции
+        """Create encrypted entry and publish events. / Создаёт зашифрованную запись."""
         created_at = self._crypto.now_timestamp()
         payload = self._crypto.build_payload_for_encrypt(data_dict, created_at=created_at)
 
@@ -65,6 +67,7 @@ class EntryManager:
         return self.get_entry(entry_id)
 
     def get_entry(self, entry_id: int) -> Dict[str, Any]:
+        """Decrypt and return full entry by id. / Расшифровывает запись по id."""
         row = self._db.get_vault_entry(entry_id)
         if not row:
             raise ValueError("Entry not found")
@@ -89,6 +92,7 @@ class EntryManager:
         }
 
     def get_all_entries(self) -> List[Dict[str, Any]]:
+        """List entries with masked secrets for UI. / Список записей без пароля в открытом виде."""
         rows = self._db.get_all_vault_entries()
         out: List[Dict[str, Any]] = []
         for r in rows:
@@ -111,7 +115,7 @@ class EntryManager:
         return out
 
     def update_entry(self, entry_id: int, data_dict: Dict[str, Any]) -> Dict[str, Any]:
-        # берём created_at из текущей записи (чтобы payload сохранял целостность таймштампа)
+        """Update encrypted entry and publish event. / Обновляет запись и публикует событие."""
         row = self._db.get_vault_entry(entry_id)
         if not row:
             raise ValueError("Entry not found")
@@ -129,8 +133,7 @@ class EntryManager:
         return self.get_entry(entry_id)
 
     def delete_entry(self, entry_id: int, soft_delete: bool = True):
-        # soft_delete по ТЗ указан как Should — здесь реализуем только hard delete,
-        # но парамет оставляем, чтобы API соответствовал требованиям.
+        """Delete entry (hard delete; soft_delete ignored). / Удаляет запись из хранилища."""
         if soft_delete:
             # из-за отсутствия deleted_entries таблицы (спринт 4) делаем hard delete
             pass

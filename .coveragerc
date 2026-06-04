@@ -1,0 +1,18 @@
+[run]
+source = src
+omit =
+    src/gui/*
+    src/main.py
+    src/core/crypto/placeholder.py
+    src/core/crypto/abstract.py
+    src/core/clipboard/platform_adapter.py
+    src/core/clipboard/clipboard_monitor.py
+    src/core/security/platform/windows_activity.py
+    src/core/security/activity_monitor.py
+    src/core/import_export/qr_codec.py
+
+[report]
+fail_under = 80
+show_missing = True
+skip_covered = True
+precision = 1

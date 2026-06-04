@@ -1,3 +1,5 @@
+"""Адаптеры буфера обмена: Qt, Windows win32, фабрика create_platform_adapter."""
+
 from abc import ABC, abstractmethod
 import platform
 import subprocess
@@ -5,16 +7,21 @@ from typing import Optional
 
 
 class ClipboardAdapter(ABC):
+    """Абстрактный доступ к системному буферу обмена."""
+
     @abstractmethod
     def copy_to_clipboard(self, data: str) -> bool:
+        """Копирует текст в буфер; True при успехе."""
         raise NotImplementedError
 
     @abstractmethod
     def clear_clipboard(self) -> bool:
+        """Очищает буфер; True при успехе."""
         raise NotImplementedError
 
     @abstractmethod
     def get_clipboard_content(self) -> Optional[str]:
+        """Возвращает текст из буфера или None при ошибке."""
         raise NotImplementedError
 
 
@@ -87,6 +94,8 @@ def _run_on_gui_thread(fn):
 
 
 class QtClipboardAdapter(ClipboardAdapter):
+    """Буфер обмена через QApplication.clipboard (вызовы на GUI-потоке)."""
+
     def _clip(self):
         try:
             from PyQt6.QtWidgets import QApplication
@@ -138,7 +147,8 @@ class QtClipboardAdapter(ClipboardAdapter):
 
 
 class WindowsClipboardAdapter(ClipboardAdapter):
-    # Windows: win32clipboard (без Qt — иначе OleSetClipboard / CoInitialize на фоновых потоках)
+    """Windows: win32clipboard с fallback на Qt и PowerShell для clear."""
+
     def __init__(self):
         self._win32clipboard = None
         self._qt_fallback = QtClipboardAdapter()
@@ -228,6 +238,7 @@ class WindowsClipboardAdapter(ClipboardAdapter):
 
 
 def create_platform_adapter() -> ClipboardAdapter:
+    """Возвращает WindowsClipboardAdapter или QtClipboardAdapter по ОС."""
     if platform.system().lower() == "windows":
         adapter = WindowsClipboardAdapter()
         if adapter._win32clipboard is not None:
@@ -236,7 +247,7 @@ def create_platform_adapter() -> ClipboardAdapter:
 
 class FakeClipboardAdapter(ClipboardAdapter):
 
-    def init(self):
+    def __init__(self):
         self.clear_called = False
         self.last_copied = None
         self._content = None

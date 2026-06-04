@@ -1,4 +1,4 @@
-# обмен ключами RSA/ECC, контакты, отпечатки (спринт 6, QR-3)
+"""Обмен ключами RSA/ECC, контакты, отпечатки и обёртка data_key."""
 
 import base64
 import hashlib
@@ -17,11 +17,13 @@ CONTACTS_CONFIG_KEY = "ie_contact_public_keys"
 
 
 def generate_rsa_keypair(bits: int = 2048) -> Tuple[str, str]:
+    """Генерирует пару RSA в PEM (private, public)."""
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=bits)
     return _pem_private(private_key), _pem_public(private_key.public_key())
 
 
 def generate_ecc_keypair() -> Tuple[str, str]:
+    """Генерирует пару ECC P-256 в PEM (private, public)."""
     private_key = ec.generate_private_key(ec.SECP256R1())
     return _pem_private(private_key), _pem_public(private_key.public_key())
 
@@ -42,7 +44,14 @@ def _pem_public(key: PublicKeyTypes) -> str:
 
 
 def normalize_pem_block(pem_text: str) -> str:
-    """Извлекает первый PEM-блок; убирает лишние пробелы и переносы."""
+    """Извлекает первый PEM-блок и нормализует переносы строк.
+
+    Args:
+        pem_text: Текст с одним или несколькими PEM-блоками.
+
+    Returns:
+        Один PEM-блок с завершающим переводом строки.
+    """
     if not pem_text or not str(pem_text).strip():
         raise ValueError("Пустой PEM")
     text = str(pem_text).strip().replace("\r\n", "\n").replace("\r", "\n")
@@ -68,6 +77,7 @@ def normalize_pem_block(pem_text: str) -> str:
 
 
 def optional_public_key_pem(pem_text: Optional[str]) -> Optional[str]:
+    """Нормализует и проверяет PEM открытого ключа; пустая строка -> None."""
     if pem_text is None:
         return None
     stripped = str(pem_text).strip()
@@ -79,6 +89,7 @@ def optional_public_key_pem(pem_text: Optional[str]) -> Optional[str]:
 
 
 def optional_private_key_pem(pem_text: Optional[str]) -> Optional[str]:
+    """Нормализует и проверяет PEM закрытого ключа; пустая строка -> None."""
     if pem_text is None:
         return None
     stripped = str(pem_text).strip()
@@ -90,6 +101,7 @@ def optional_private_key_pem(pem_text: Optional[str]) -> Optional[str]:
 
 
 def public_key_fingerprint(public_key_pem: str) -> str:
+    """SHA256 от DER открытого ключа (первые 16 hex-символов)."""
     pem = normalize_pem_block(public_key_pem)
     pub = load_pem_public_key(pem.encode("ascii"))
     der = pub.public_bytes(
@@ -100,6 +112,7 @@ def public_key_fingerprint(public_key_pem: str) -> str:
 
 
 def wrap_key_for_public(data_key: bytes, public_key_pem: str) -> Dict[str, str]:
+    """Оборачивает data_key RSA-OAEP-SHA256 для получателя."""
     pem = normalize_pem_block(public_key_pem)
     pub = load_pem_public_key(pem.encode("ascii"))
     if not isinstance(pub, rsa.RSAPublicKey):
@@ -112,6 +125,7 @@ def wrap_key_for_public(data_key: bytes, public_key_pem: str) -> Dict[str, str]:
 
 
 def unwrap_key_with_private(wrapped: Dict[str, str], private_key_pem: str) -> bytes:
+    """Снимает обёртку data_key закрытым RSA-ключом."""
     pem = normalize_pem_block(private_key_pem)
     priv = load_pem_private_key(pem.encode("ascii"), password=None)
     if not isinstance(priv, rsa.RSAPrivateKey):
@@ -139,6 +153,7 @@ def _save_contacts(contacts: List[Dict[str, Any]]) -> None:
 
 
 def add_contact(name: str, public_key_pem: str) -> Dict[str, Any]:
+    """Добавляет или обновляет контакт по отпечатку ключа в config."""
     fp = public_key_fingerprint(public_key_pem)
     contacts = _load_contacts()
     for c in contacts:
@@ -162,6 +177,7 @@ def add_contact(name: str, public_key_pem: str) -> Dict[str, Any]:
 
 
 def list_contacts(include_revoked: bool = False) -> List[Dict[str, Any]]:
+    """Возвращает список контактов (по умолчанию без отозванных)."""
     contacts = _load_contacts()
     if include_revoked:
         return contacts
@@ -169,6 +185,7 @@ def list_contacts(include_revoked: bool = False) -> List[Dict[str, Any]]:
 
 
 def revoke_contact(fingerprint: str) -> bool:
+    """Помечает контакт отозванным по отпечатку; True если найден."""
     contacts = _load_contacts()
     changed = False
     for c in contacts:
@@ -182,6 +199,7 @@ def revoke_contact(fingerprint: str) -> bool:
 
 
 def rotate_contact_keys(fingerprint: str, new_public_key_pem: str) -> Optional[Dict[str, Any]]:
+    """Отзывает старый ключ и регистрирует новый контакт."""
     revoke_contact(fingerprint)
     return add_contact(f"rotated-{fingerprint[:8]}", new_public_key_pem)
 

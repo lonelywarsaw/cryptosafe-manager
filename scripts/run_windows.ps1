@@ -1,10 +1,10 @@
-# Запуск GUI на Windows после setup_windows.ps1
+# Run GUI on Windows after setup_windows.ps1
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 if (-not (Test-Path ".venv")) {
-    Write-Error "Сначала выполните: .\scripts\setup_windows.ps1"
+    Write-Error "Run first: .\scripts\setup_windows.ps1"
     exit 1
 }
 

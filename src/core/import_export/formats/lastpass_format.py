@@ -1,4 +1,4 @@
-# LastPass CSV (спринт 6, IMP-1)
+"""LastPass CSV import/export compatibility layer. / Слой совместимости импорта/экспорта CSV LastPass."""
 
 import csv
 import io
@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 LASTPASS_FIELDS = ("url", "username", "password", "extra", "name", "grouping", "fav")
 
 def entries_to_lastpass_csv(entries: List[Dict[str, Any]]) -> str:
+    """Serializes entries to LastPass-compatible CSV columns. / Сериализует записи в CSV с колонками LastPass."""
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=LASTPASS_FIELDS, extrasaction="ignore")
     writer.writeheader()
@@ -26,6 +27,7 @@ def entries_to_lastpass_csv(entries: List[Dict[str, Any]]) -> str:
 
 
 def lastpass_to_entries(text: str) -> List[Dict[str, Any]]:
+    """Parses LastPass CSV export into vault entry dictionaries. / Разбирает CSV-экспорт LastPass в словари записей."""
     buf = io.StringIO(text.strip())
     reader = csv.DictReader(buf)
     out: List[Dict[str, Any]] = []

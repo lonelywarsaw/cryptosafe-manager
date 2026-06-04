@@ -1,5 +1,9 @@
 # Спринт 7 — PERF-1..PERF-4 (TRD §11)
 
+import pytest
+
+pytestmark = pytest.mark.perf
+
 import statistics
 import time
 import unittest

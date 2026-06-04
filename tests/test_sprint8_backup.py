@@ -41,6 +41,17 @@ class TestSprint8Backup(unittest.TestCase):
             return self._vault
         return default
 
+    def test_backup_while_vault_connection_open(self):
+        """Backup must work while GUI holds pooled SQLite connections (Windows)."""
+        conn = db_module.get_connection()
+        try:
+            dest = os.path.join(self._tmpdir, "open-pool.csafe.zip")
+            manifest = create_backup(dest, include_config=False)
+            self.assertEqual(manifest.get("entry_count"), 1)
+            self.assertTrue(os.path.isfile(manifest.get("archive_path", dest)))
+        finally:
+            conn.close()
+
     def test_backup_roundtrip(self):
         dest = os.path.join(self._tmpdir, "backup.csafe.zip")
         manifest = create_backup(dest, include_config=False)

@@ -1,4 +1,4 @@
-# валидация и очистка ввода: обрезка длины, удаление управляющих и непечатаемых символов
+"""Валидация и очистка ввода: длина, управляющие и непечатаемые символы."""
 
 import re
 
@@ -13,7 +13,7 @@ CONTROL_OR_NONPRINT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def sanitize_text(text, max_len=None):
-    # строка: обрезка пробелов по краям, удаление управляющих символов, обрезка по max_len
+    """Очищает строку: trim, удаление control/nonprint, обрезка по max_len."""
     if text is None:
         return ""
     s = str(text).strip()
@@ -24,18 +24,25 @@ def sanitize_text(text, max_len=None):
 
 
 def validate_title(title):
-    # заголовок очищается; возвращается (очищенная строка, True если не пустая)
+    """Очищает заголовок.
+
+    Returns:
+        (очищенная строка, True если не пустая).
+    """
     s = sanitize_text(title, MAX_TITLE_LEN)
     return s, len(s) > 0
 
 
 def sanitize_username(value):
+    """Очищает поле username с лимитом MAX_USERNAME_LEN."""
     return sanitize_text(value, MAX_USERNAME_LEN)
 
 
 def sanitize_url(value):
+    """Очищает URL с лимитом MAX_URL_LEN."""
     return sanitize_text(value, MAX_URL_LEN)
 
 
 def sanitize_notes(value):
+    """Очищает заметки с лимитом MAX_NOTES_LEN."""
     return sanitize_text(value, MAX_NOTES_LEN)

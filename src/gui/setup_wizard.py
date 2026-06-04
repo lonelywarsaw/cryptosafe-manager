@@ -1,5 +1,4 @@
-# мастер первого запуска: ввод пароля дважды, выбор пути к vault.db, параметры шифрования (заглушка)
-# спринт 2: проверка силы пароля, хеш Argon2 и соль в key_store
+"""First-run wizard: master password, DB path, encryption presets. / Мастер первого запуска: пароль, путь к БД, шифрование."""
 
 import sys
 import os
@@ -23,15 +22,20 @@ from core.crypto.key_derivation import (
 from core.crypto.authentication import validate_password_strength
 from database import db as database_db
 from .strings import t
+from .theme import apply_dialog_layout
 from .widgets.password_entry import PasswordEntry
 
 
 class SetupWizard(QDialog):
+    """Initial setup dialog for new vault creation. / Диалог первичной настройки нового хранилища."""
+
     def __init__(self, parent=None):
+        """Builds password, database, and encryption preset fields. / Создаёт поля пароля, БД и пресетов шифрования."""
         super().__init__(parent)
         self.setWindowTitle(t("app_title") + " — Первый запуск")
         self.setMinimumWidth(450)
         layout = QVBoxLayout(self)
+        apply_dialog_layout(layout)
         pass_group = QGroupBox(t("master_password"))
         pass_layout = QFormLayout(pass_group)
         self._pass = PasswordEntry(self)
@@ -49,12 +53,20 @@ class SetupWizard(QDialog):
         layout.addWidget(db_group)
         enc_group = QGroupBox(t("encryption_settings"))
         enc_layout = QVBoxLayout(enc_group)
-        enc_layout.addWidget(QLabel("Параметры ключа (заглушка):"))
+        self._pbkdf2_iterations = PBKDF2_ITERATIONS
+        self._enc_hint = QLabel(
+            f"PBKDF2: {self._pbkdf2_iterations:,} итераций (по умолчанию). "
+            "Влияет на скорость входа и стойкость ключа AES."
+        )
+        self._enc_hint.setWordWrap(True)
+        enc_layout.addWidget(self._enc_hint)
         btn_row = QHBoxLayout()
-        for label in ["По умолчанию", "Высокая стойкость"]:
-            b = QPushButton(label)
-            b.clicked.connect(lambda checked, l=label: None)
-            btn_row.addWidget(b)
+        btn_default = QPushButton("По умолчанию")
+        btn_default.clicked.connect(lambda: self._set_encryption_preset(PBKDF2_ITERATIONS))
+        btn_high = QPushButton("Высокая стойкость")
+        btn_high.clicked.connect(lambda: self._set_encryption_preset(600_000))
+        btn_row.addWidget(btn_default)
+        btn_row.addWidget(btn_high)
         enc_layout.addLayout(btn_row)
         layout.addWidget(enc_group)
         btns = QHBoxLayout()
@@ -63,6 +75,14 @@ class SetupWizard(QDialog):
         ok_btn.clicked.connect(self._finish)
         btns.addWidget(ok_btn)
         layout.addLayout(btns)
+
+    def _set_encryption_preset(self, iterations: int) -> None:
+        self._pbkdf2_iterations = int(iterations)
+        label = "по умолчанию" if iterations == PBKDF2_ITERATIONS else "высокая стойкость"
+        self._enc_hint.setText(
+            f"PBKDF2: {self._pbkdf2_iterations:,} итераций ({label}). "
+            "Параметр сохраняется при завершении мастера."
+        )
 
     def _choose_db(self):
         # диалог «сохранить как» — пользователь выбирает путь к файлу vault.db, путь сохраняется в config
@@ -95,7 +115,8 @@ class SetupWizard(QDialog):
         database_db.set_key_store("auth_hash", auth_hash.encode("utf-8"))
         database_db.set_key_store("enc_salt", salt)
         # (KEY-3, спринт2) параметры PBKDF2 храним в key_store с версионированием
-        pbkdf2_iterations = int(config.get("pbkdf2_iterations", PBKDF2_ITERATIONS))
+        pbkdf2_iterations = int(getattr(self, "_pbkdf2_iterations", PBKDF2_ITERATIONS))
+        config.set("pbkdf2_iterations", str(pbkdf2_iterations))
         params = {
             "pbkdf2_iterations": pbkdf2_iterations,
             "salt_len": PBKDF2_SALT_LEN,

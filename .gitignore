@@ -1,4 +1,37 @@
+# Локальные данные приложения (не коммитить)
 *.db
+config.db
+
+# Python / venv
+.venv/
+venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Сборка PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Отчёты тестов (генерируются скриптом)
+tests/report/*
+!tests/report/.gitignore
+!tests/report/README.md
+
+# IDE / ОС
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Утилиты / артефакты
+scripts/procdump.exe
+scripts/myeasylog.log
+*.dmp
+
+# Документация спринтов (по желанию проекта)
 docs/sprint_reports/

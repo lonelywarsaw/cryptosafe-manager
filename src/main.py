@@ -1,5 +1,4 @@
-# точка входа: создаётся приложение, применяется тема, инициализируются бд и аудит
-# при первом запуске показывается мастер настройки, затем окно ввода пароля, затем главное окно
+"""Точка входа PyQt6: настройка, разблокировка, главное окно, аудит."""
 
 import sys
 import os
@@ -21,6 +20,11 @@ from gui.unlock_dialog import UnlockDialog
 
 
 def main():
+    """Запускает приложение: init_db, мастер/setup, unlock, MainWindow.
+
+    Returns:
+        Код выхода app.exec() или 0 при отмене.
+    """
     if sys.platform == "win32":
         try:
             import pythoncom  # type: ignore
@@ -41,7 +45,12 @@ def main():
             apply_profile(PROFILE_STANDARD)
         except Exception:
             pass
-    database_db.set_db_path(config.get(config.DB_PATH))
+    db_path = config.get(config.DB_PATH)
+    database_db.set_db_path(db_path)
+    if db_path and not os.path.isfile(os.path.abspath(os.path.expanduser(str(db_path)))):
+        if "pytest" not in sys.modules:
+            from gui.strings import t
+            QMessageBox.warning(None, t("app_title"), t("db_not_found"))
     database_db.init_db()
     register_audit()
 

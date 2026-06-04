@@ -1,12 +1,12 @@
-# Первичная настройка после git clone на Windows (разработка / сборка .exe)
+# Setup after git clone on Windows (dev / build .exe)
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-Write-Host "==> CryptoSafe Manager — setup (Windows)"
+Write-Host "==> CryptoSafe Manager - setup (Windows)"
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Error "Нужен Python 3.8+. Скачайте с https://www.python.org/downloads/ (галочка «Add to PATH»)."
+    Write-Error "Python 3.8+ required. Install from https://www.python.org/downloads/ (check Add to PATH)."
     exit 1
 }
 
@@ -19,5 +19,5 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 Write-Host ""
-Write-Host "Готово. Запуск: .\scripts\run_windows.ps1"
-Write-Host "Сборка .exe для установки на ПК: .\scripts\build_windows.ps1"
+Write-Host "Done. Run app: .\scripts\run_windows.ps1"
+Write-Host "Build .exe:    .\scripts\build_windows.ps1"

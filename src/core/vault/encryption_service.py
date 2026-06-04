@@ -1,3 +1,5 @@
+"""AES-256-GCM encryption for vault entry payloads. / Шифрование записей AES-256-GCM."""
+
 import json
 import os
 import time
@@ -13,16 +15,17 @@ from typing import Any, Dict
 #   (в библиотеке cryptography ciphertext+tag возвращаются одним буфером)
 @dataclass(frozen=True)
 class EncryptedEntry:
-    # BLOB в формате nonce || ciphertext||tag
+    """Encrypted BLOB: nonce || ciphertext||tag. / BLOB: nonce || шифртекст||тег."""
     encrypted_blob: bytes
 
 
 class EncryptionServiceAESGCM:
+    """AES-GCM encrypt/decrypt for JSON entry payloads. / AES-GCM для JSON-полей записи."""
     VERSION = 1
     NONCE_LEN = 12
 
     def __init__(self, key_manager):
-        # key_manager — это KeyManager из спринт 2 (кэш ключа в памяти после логина)
+        """Use KeyManager session key after unlock. / Ключ из KeyManager после входа."""
         self._key_manager = key_manager
 
     def _get_aesgcm(self):
@@ -41,7 +44,7 @@ class EncryptionServiceAESGCM:
         return AESGCM(key)
 
     def encrypt_entry_payload(self, payload: Dict[str, Any]) -> EncryptedEntry:
-        # payload шифруется как JSON, чтобы внутри можно было версионировать поля
+        """Encrypt JSON payload to EncryptedEntry. / Шифрует JSON-поля записи."""
         aesgcm = self._get_aesgcm()
 
         nonce = os.urandom(self.NONCE_LEN)
@@ -55,6 +58,7 @@ class EncryptionServiceAESGCM:
         return EncryptedEntry(encrypted_blob=encrypted_blob)
 
     def decrypt_entry_payload(self, encrypted_blob: bytes) -> Dict[str, Any]:
+        """Decrypt blob and parse JSON payload. / Расшифровывает BLOB в словарь полей."""
         if not encrypted_blob or len(encrypted_blob) < (self.NONCE_LEN + 16):
             raise ValueError("Повреждённый зашифрованный формат")
 
@@ -69,7 +73,7 @@ class EncryptionServiceAESGCM:
 
     @staticmethod
     def build_payload_for_encrypt(data_dict: Dict[str, Any], created_at: str) -> Dict[str, Any]:
-        # data_dict ожидает plaintext поля (после валидации GUI).
+        """Build versioned plaintext dict before encrypt. / Собирает поля перед шифрованием."""
         return {
             "title": data_dict.get("title", ""),
             "username": data_dict.get("username", ""),
@@ -83,6 +87,6 @@ class EncryptionServiceAESGCM:
 
     @staticmethod
     def now_timestamp() -> str:
-        # created_at внутри payload храним в том же формате, что и в БД: YYYY-MM-DD
+        """Current date as YYYY-MM-DD for payloads. / Текущая дата для created_at."""
         return datetime.now().strftime("%Y-%m-%d")
 

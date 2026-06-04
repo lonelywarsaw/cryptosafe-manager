@@ -26,8 +26,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run tests (skip integration)
+    - name: Run tests (Sprint 8 suite, coverage ≥80%)
       run: |
-        python -m pytest tests/ -q \
-          --ignore=tests/test_integration.py \
-          --ignore=tests/test_password_change_integration.py
+        python -m pytest
+
+    - name: Generate test report (TEST-3)
+      run: python scripts/generate_test_report.py
+      continue-on-error: true

@@ -1,4 +1,4 @@
-# защита от side-channel: сравнение в постоянное время (спринт 7, SC-1)
+"""Защита от side-channel: сравнение строк и HMAC в постоянное время."""
 
 import hmac
 import secrets
@@ -6,6 +6,7 @@ from typing import Union
 
 
 def constant_time_compare(a: Union[str, bytes], b: Union[str, bytes]) -> bool:
+    """Сравнивает a и b через secrets.compare_digest (выравнивание длины)."""
     if isinstance(a, str):
         a = a.encode("utf-8")
     if isinstance(b, str):
@@ -17,6 +18,7 @@ def constant_time_compare(a: Union[str, bytes], b: Union[str, bytes]) -> bool:
 
 
 def constant_time_equal_hex(a_hex: str, b_hex: str) -> bool:
+    """Сравнивает hex-строки как байты в постоянное время."""
     try:
         a = bytes.fromhex(a_hex)
         b = bytes.fromhex(b_hex)
@@ -26,4 +28,5 @@ def constant_time_equal_hex(a_hex: str, b_hex: str) -> bool:
 
 
 def hmac_compare(digest: str, expected: str) -> bool:
+    """Сравнивает hex-дайджесты через hmac.compare_digest."""
     return hmac.compare_digest(digest or "", expected or "")

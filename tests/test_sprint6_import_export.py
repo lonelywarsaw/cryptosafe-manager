@@ -1,5 +1,7 @@
 # Спринт 6 — TEST-1..TEST-5 (TRD §10)
 
+import pytest
+
 import json
 import os
 import sqlite3
@@ -214,6 +216,7 @@ class TestSprint6Validation(unittest.TestCase):
 
     @patch("core.import_export.exporter.verify_master_password", return_value=True)
     @patch("core.import_export.importer.verify_master_password", return_value=True)
+    @pytest.mark.slow
     def test_test5_export_import_1000_entries(self, *_mocks) -> None:
         """TEST-5: экспорт/импорт 1000 записей, замер памяти."""
         big = _sample_entries(1000)

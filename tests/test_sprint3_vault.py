@@ -1,4 +1,6 @@
 # tests/test_sprint3_vault.py
+import pytest
+
 import os
 import tempfile
 import threading
@@ -134,6 +136,7 @@ class TestSprint3Vault(unittest.TestCase):
         self.assertEqual(decrypted["password"], pwd)
 
     # === TEST-2: CRUD на 100 записях ===
+    @pytest.mark.slow
     def test_test2_crud_integration_100_entries(self):
         created_ids = []
         for i in range(100):

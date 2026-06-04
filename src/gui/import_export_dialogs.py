@@ -1,3 +1,5 @@
+"""Import/export and sharing dialogs for vault data. / Диалоги импорта, экспорта и обмена данными хранилища."""
+
 import json
 from typing import Dict, List, Optional
 
@@ -27,6 +29,7 @@ from core.import_export.key_exchange import optional_private_key_pem, optional_p
 from core.import_export.sharing_service import SharingService
 from core.import_export import qr_codec
 from .strings import t
+from .user_errors import format_operation_error
 
 
 def _fill_combo(combo: QComboBox, items: List[tuple]) -> None:
@@ -36,7 +39,10 @@ def _fill_combo(combo: QComboBox, items: List[tuple]) -> None:
 
 
 class ExportDialog(QDialog):
+    """Dialog to export selected vault entries to external formats. / Диалог экспорта выбранных записей во внешние форматы."""
+
     def __init__(self, parent, entries_provider, selected_ids: Optional[List[int]] = None):
+        """Initializes format options and entry selection tree. / Инициализирует форматы и дерево выбора записей."""
         super().__init__(parent)
         self.setWindowTitle(t("s6_export_title"))
         self.resize(700, 520)
@@ -131,6 +137,9 @@ class ExportDialog(QDialog):
         )
 
     def _run_export(self):
+        if not self._chosen_ids():
+            QMessageBox.information(self, t("app_title"), t("s6_no_entries_selected"))
+            return
         fmt = self._format.currentData()
         master = self._master.text().strip()
         exp_pass = self._export_pass.text()
@@ -174,12 +183,11 @@ class ExportDialog(QDialog):
             else:
                 payload = exporter.export_lastpass_encrypted_json(exp_pass, master_password=master, options=options)
                 default_filter = "JSON (*.json)"
+        except ValueError:
+            QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
+            return
         except Exception as exc:
-            err = str(exc)
-            if "PEM" in err or "MalformedFraming" in type(exc).__name__:
-                QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
-            else:
-                QMessageBox.warning(self, t("app_title"), t("s6_export_failed") % err)
+            QMessageBox.warning(self, t("app_title"), format_operation_error(exc, context="export"))
             return
 
         path, _ = QFileDialog.getSaveFileName(self, t("s6_save_export"), "", default_filter)
@@ -193,7 +201,10 @@ class ExportDialog(QDialog):
 
 
 class ImportDialog(QDialog):
+    """Dialog to import entries from external files into the vault. / Диалог импорта записей из внешних файлов в хранилище."""
+
     def __init__(self, parent, importer: VaultImporter):
+        """Builds file picker, credentials, and conflict policy controls. / Создаёт выбор файла, ключи и политику конфликтов."""
         super().__init__(parent)
         self.setWindowTitle(t("s6_import_title"))
         self.resize(680, 420)
@@ -276,7 +287,7 @@ class ImportDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
         except Exception as exc:
-            self._preview.setText(t("s6_preview_failed") % exc)
+            self._preview.setText(format_operation_error(exc, context="import"))
 
     def _run_import(self):
         path = self._file.text().strip()
@@ -301,15 +312,14 @@ class ImportDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
         except Exception as exc:
-            err = str(exc)
-            if "PEM" in err or "MalformedFraming" in type(exc).__name__:
-                QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
-            else:
-                QMessageBox.warning(self, t("app_title"), t("s6_import_failed") % err)
+            QMessageBox.warning(self, t("app_title"), format_operation_error(exc, context="import"))
 
 
 class ShareDialog(QDialog):
+    """Dialog to create encrypted share packages for one entry. / Диалог создания зашифрованных share-пакетов для записи."""
+
     def __init__(self, parent, selected_entry_provider):
+        """Configures delivery method, permissions, and expiration. / Настраивает способ доставки, права и срок действия."""
         super().__init__(parent)
         self.setWindowTitle(t("s6_share_title"))
         self.resize(640, 420)
@@ -386,11 +396,14 @@ class ShareDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, t("app_title"), t("s6_invalid_pem"))
         except Exception as exc:
-            QMessageBox.warning(self, t("app_title"), t("s6_share_failed") % exc)
+            QMessageBox.warning(self, t("app_title"), format_operation_error(exc, context="share"))
 
 
 class QRViewerDialog(QDialog):
+    """Dialog to generate and scan QR codes for keys and shares. / Диалог генерации и сканирования QR для ключей и share."""
+
     def __init__(self, parent):
+        """Builds payload editor and QR preview controls. / Создаёт редактор данных и элементы предпросмотра QR."""
         super().__init__(parent)
         self.setWindowTitle(t("s6_qr_title"))
         self.resize(600, 600)
@@ -441,7 +454,7 @@ class QRViewerDialog(QDialog):
             self._info.setText(f"QR: {self._type.currentText()}, chunks={len(chunks)}")
             self._last_ts = int(payload.get("ts") or 0)
         except Exception as exc:
-            QMessageBox.warning(self, t("app_title"), t("s6_qr_failed") % exc)
+            QMessageBox.warning(self, t("app_title"), format_operation_error(exc, context="qr"))
 
     def _scan_image(self):
         path, _ = QFileDialog.getOpenFileName(self, t("s6_scan_image"), "", "Images (*.png *.jpg *.jpeg *.webp)")
@@ -454,7 +467,7 @@ class QRViewerDialog(QDialog):
             self._type.setCurrentText(decoded.get("type", "public_key"))
             self._info.setText(f"OK: {decoded.get('type')}")
         except Exception as exc:
-            QMessageBox.warning(self, t("app_title"), t("s6_qr_failed") % exc)
+            QMessageBox.warning(self, t("app_title"), format_operation_error(exc, context="qr"))
 
     def _copy_payload(self):
         text = self._payload.text()

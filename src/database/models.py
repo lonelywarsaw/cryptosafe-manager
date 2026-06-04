@@ -1,5 +1,4 @@
-# описание схемы vault db: версия и список sql-команд для создания таблиц
-# таблицы создаются в db.init_db() при первом запуске
+"""Схема vault.db: SCHEMA_VERSION и DDL для init_db()."""
 
 SCHEMA_VERSION = 5
 DDL = [

@@ -1,4 +1,4 @@
-# временное шифрование (xor); ключ берётся через KeyManager и обнуляется после использования
+"""Временное XOR-шифрование; ключ из KeyManager обнуляется после операции."""
 
 import ctypes
 from .abstract import EncryptionService
@@ -12,8 +12,10 @@ def _secure_zero(buf):
 
 
 class AES256Placeholder(EncryptionService):
-    # xor каждого байта с ключом; ключ берётся из key_manager, затем копия ключа обнуляется
+    """XOR-шифрование байтов с ключом из key_manager (заглушка AES-256)."""
+
     def encrypt(self, data: bytes, key_manager) -> bytes:
+        """Шифрует data XOR с ключом; копия ключа обнуляется в finally."""
         key = key_manager.get_encryption_key()
         if key is None:
             raise ValueError("Ключ не задан (хранилище заблокировано)")
@@ -27,5 +29,5 @@ class AES256Placeholder(EncryptionService):
             _secure_zero(key_arr)
 
     def decrypt(self, ciphertext: bytes, key_manager) -> bytes:
-        # xor симметричен — расшифровка та же операция, что и шифрование
+        """Расшифровка совпадает с encrypt (XOR симметричен)."""
         return self.encrypt(ciphertext, key_manager)

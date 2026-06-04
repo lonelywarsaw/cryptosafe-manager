@@ -1,4 +1,4 @@
-# кэш ключа шифрования в памяти: пока хранилище открыто, ключ лежит здесь
+"""Кэш ключа шифрования в памяти на время разблокированного хранилища."""
 
 import ctypes
 
@@ -21,14 +21,13 @@ def _zero_key(buf):
 
 
 def set_cached_key(key: bytes):
-    # в кэш кладётся копия ключа; при clear обнуляется временный буфер
+    """Сохраняет копию ключа в кэше до clear_cached_key."""
     global _cached_key
     _cached_key = bytes(key) if key else None
 
 
 def get_cached_key():
-    # возвращается текущий ключ из кэша или None, если пользователь не залогинен
-    # после часа неактивности ключ сбрасывается
+    """Возвращает ключ из кэша или None; сбрасывает после часа неактивности."""
     try:
         from core.state_manager import get_state_manager
         sm = get_state_manager()
@@ -41,7 +40,7 @@ def get_cached_key():
 
 
 def clear_cached_key():
-    # ключ удаляется из кэша и обнуляется в памяти (при logout, авто-блокировке, закрытии)
+    """Удаляет ключ из кэша и обнуляет буфер в памяти."""
     global _cached_key
     if _cached_key is not None:
         mutable = bytearray(_cached_key)

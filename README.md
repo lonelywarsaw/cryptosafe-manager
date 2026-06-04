@@ -6,82 +6,226 @@
 
 ## Содержание
 
-- [Видение продукта](#видение-продукта)
-- [Архитектура и диаграмма MVC](#архитектура-и-диаграмма-mvc)
+- [Обзор и назначение](#обзор-и-назначение)
+- [Настройка](#настройка)
+- [Использование основных функций](#использование-основных-функций)
+- [Известные ограничения](#известные-ограничения)
+- [Направления развития](#направления-развития)
+- [Документация](#документация)
+- [Архитектура](#архитектура)
 - [Структура проекта](#структура-проекта)
-- [Безопасность](#безопасность)
-- [Сборка](#сборка)
-- [Требования](#требования)
-- [Установка и запуск](#установка-и-запуск)
-- [Спринты](#спринты)
+- [Разработка и тесты](#разработка-и-тесты)
+- [Спринты (TRD)](#спринты-trd)
 
 ---
 
-## Видение продукта
+## Обзор и назначение
 
-CryptoSafe Manager нужен, чтобы хранить логины и пароли в одном месте под одним мастер‑паролем. Приложение не зависит от облака: пользователь сам владеет файлами (конфиг и база с записями). Цель — простой и предсказуемый инструмент для повседневного хранения учётных данных с возможностью переноса данных между машинами.
+**CryptoSafe Manager** — локальный менеджер паролей для Windows, Linux и macOS. Все секреты хранятся **только на вашем компьютере** в зашифрованной базе SQLite; облака и внешних серверов нет.
+
+**Для кого:** личное использование, учебные проекты, демонстрация безопасной архитектуры (AES-GCM, Argon2, аудит, защищённый буфер).
+
+**Ключевые возможности:**
+
+- одно хранилище под **мастер-паролем**;
+- **AES-256-GCM** для каждой записи;
+- **буфер обмена** с автоочисткой;
+- **импорт/экспорт** (JSON, CSV, Bitwarden, LastPass);
+- **журнал аудита** с проверкой целостности;
+- **профили безопасности**, трей, режим паники;
+- **резервные копии** `.csafe.zip` и сборка **.exe** (PyInstaller).
+
+Подробнее для пользователей: [docs/user_guide.md](docs/user_guide.md).  
+Для разработчиков: [docs/technical.md](docs/technical.md).
 
 ---
 
-## Архитектура и диаграмма MVC
+## Настройка
 
-Используется MVC-подобное разделение:
+### Требования
 
-- **Model (модель)** — данные и правила работы с ними: `database/` (схема, CRUD по основной БД), а также хранение настроек в `core/config.py` (своя БД конфигурации).
-- **View (представление)** — всё, что видит пользователь: `gui/` (главное окно, диалоги, виджеты, темы, строки интерфейса).
-- **Controller (контроллер)** — связующая логика между действиями пользователя и данными: часть кода в `core/` (конфиг, шифрование, события, состояние, валидация ввода) и обработчики в `gui/main_window.py`.
+- Python 3.8+
+- Графическая среда (рабочий стол; на Linux — X11/Wayland при необходимости)
 
-Поток данных: пользователь взаимодействует с GUI → обработчики вызывают core и database → данные читаются/пишутся в БД и конфиг → обновлённый интерфейс отображает результат.
+### Установка зависимостей и запуск приложения
 
-### Диаграмма MVC (поток данных)
+На всех ОС: **`git clone` → `setup_*` (один раз) → `run_*`**.
 
-```mermaid
-flowchart TB
-    subgraph View["Представление (View)"]
-        A[main_window]
-        B[setup_wizard / unlock_dialog]
-        C[entry_dialog / settings_dialog]
-        D[widgets: PasswordEntry, SecureTable]
-        E[theme, strings]
-    end
-    subgraph Controller["Контроллер (Controller)"]
-        F[config]
-        G[crypto, key_manager]
-        H[events, state_manager]
-        I[input_validation]
-        A5[audit/]
-    end
-    subgraph Model["Модель (Model)"]
-        J[(database/db + models)]
-        K[(config.db)]
-    end
-    User((Пользователь)) --> A
-    A --> F
-    A --> G
-    A --> H
-    A --> A5
-    B --> F
-    C --> I
-    F --> K
-    G --> J
-    H --> J
-    A5 --> J
-    J --> A
-    K --> F
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
+cd cryptosafe-manager
+.\scripts\setup_windows.ps1
+.\scripts\run_windows.ps1
 ```
 
-Упрощённая схема потока (пользователь → GUI → core → БД):
+**Linux:**
+
+```bash
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
+cd cryptosafe-manager
+chmod +x scripts/setup_linux.sh scripts/run_linux.sh
+bash scripts/setup_linux.sh
+bash scripts/run_linux.sh
+```
+
+**macOS:**
+
+```bash
+git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
+cd cryptosafe-manager
+chmod +x scripts/setup_macos.sh scripts/run_macos.sh
+bash scripts/setup_macos.sh
+bash scripts/run_macos.sh
+```
+
+Альтернатива: `python run.py` после `pip install -r requirements.txt`.
+
+### Сборка исполняемого файла (PyInstaller)
+
+| ОС | Сборка | Запуск |
+|----|--------|--------|
+| Windows | `.\scripts\build_windows.ps1` | `dist\CryptoSafeManager\CryptoSafeManager.exe` |
+| Linux | `bash scripts/build_linux.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
+| macOS | `bash scripts/build_macos.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
+
+Скопируйте **всю папку** `dist/CryptoSafeManager/` на целевой ПК.
+
+---
+
+## Использование основных функций
+
+### Первый запуск и разблокировка
+
+![Мастер первого запуска](docs/images/01_setup_wizard.png)
+
+Мастер: мастер-пароль, путь к `vault.db`, выбор стойкости PBKDF2 (100k / 600k итераций).
+
+![Разблокировка](docs/images/02_unlock.png)
+
+При каждом запуске — ввод мастер-пароля; после успеха ключ держится в памяти до блокировки.
+
+### Записи и поиск
+
+![Главное окно](docs/images/03_main_window.png)
+
+Таблица записей, поиск (`title:`, `username:`, …), копирование логина/пароля, таймер буфера в статус-баре.
+
+![Редактирование записи](docs/images/04_entry_dialog.png)
+
+Добавление и изменение: генератор пароля, индикатор силы, URL.
+
+| Действие | Меню / shortcut |
+|----------|-----------------|
+| Добавить запись | Правка → Добавить / `Ctrl+N` |
+| Изменить | Правка → Изменить / `Ctrl+E`, `F2`, `Enter` (в таблице) |
+| Удалить | Правка → Удалить / `Delete` (в таблице) |
+| Поиск | Поле над таблицей / `Ctrl+F` (очистка — `Esc`) |
+| Копировать логин | Правка / `Ctrl+Shift+U` |
+| Копировать пароль | Правка / `Ctrl+Shift+C` |
+| Копировать всё | Правка / `Ctrl+Shift+A` |
+| Очистить буфер | Правка / `Ctrl+Shift+B` |
+| Показать пароли | Панель / `Ctrl+Shift+P` |
+| Разблокировать | Файл → Разблокировать / `Ctrl+Shift+O` |
+| Заблокировать | Файл → Заблокировать / `Ctrl+Shift+L` |
+| Журнал аудита | Вид → Журнал / `Ctrl+Shift+J` |
+| Настройки | Вид → Настройки / `Ctrl+,` |
+
+**Навигация с клавиатуры (UX-1):** `Tab` — поиск ↔ таблица; стрелки — строки и колонки; полный список — **Справка → Горячие клавиши**.
+
+### Защищённый буфер обмена
+
+![Статус буфера](docs/images/05_clipboard_status.png)
+
+Копирование → таймер очистки (настройки) → автоматический сброс; **Правка → Очистить буфер**.
+
+### Импорт, экспорт, резервная копия
+
+![Импорт/экспорт](docs/images/06_import_export.png)
+
+**Файл → Экспорт / Импорт хранилища** — Encrypted JSON, CSV, Bitwarden, LastPass.  
+**Файл → Резервная копия / Восстановить** — архив `.csafe.zip`.
+
+### Журнал аудита и настройки
+
+![Журнал аудита](docs/images/07_audit_log.png)
+
+**Вид → Журнал** — события и проверка целостности.
+
+![Настройки](docs/images/08_settings.png)
+
+Профиль безопасности, таймаут буфера, автоблокировка, тема, язык.
+
+### Режим паники и трей
+
+- **Ctrl+Shift+Esc** — блокировка, очистка буфера, скрытие окна.
+- Сворачивание в **трей** (если включено в настройках).
+
+![Резервная копия](docs/images/09_backup.png)
+
+---
+
+## Известные ограничения
+
+- **Нет облачной синхронизации** между устройствами — только ручной перенос `vault.db` или экспорт.
+- **Нет браузерного расширения** — автозаполнение в браузере не поддерживается.
+- **Мастер-пароль не восстанавливается** — при потере пароля нужна резервная копия vault (без пароля данные не расшифровать).
+- **Сборка кросс-платформенная:** `.exe` только на Windows, бинарник Linux — на Linux (PyInstaller на той же ОС).
+- **QR-сканер камеры** — в основном Windows (`pyzbar`); на Linux опционально.
+- **Настройки шифрования в мастере** задают PBKDF2 при **создании** хранилища; смена итераций для существующего vault — только через пересоздание/миграцию вручную.
+- Журнал аудита на очень больших объёмах может замедлять проверку целостности при старте.
+
+---
+
+## Направления развития
+
+- Синхронизация через пользовательский облачный диск (шифрованный файл vault, без своего сервера).
+- Браузерное расширение или экспорт в формат менеджеров с автозаполнением.
+- Миграция параметров PBKDF2 для существующего хранилища из GUI.
+- QR-сканер и камера на Linux/macOS «из коробки».
+- Подпись исполняемого файла (code signing) для Windows/macOS.
+- Улучшение доступности (a11y) и локализация дополнительных языков.
+
+---
+
+## Документация
+
+| Документ | Назначение |
+|----------|------------|
+| [docs/user_guide.md](docs/user_guide.md) | Руководство пользователя |
+| [docs/technical.md](docs/technical.md) | Архитектура, криптография, схема БД |
+| [sprints/](sprints/) | Спецификации требований по спринтам (TRD) |
+| Docstrings в `src/` | Описание публичных API модулей |
+
+---
+
+## Архитектура
+
+Проект разделён по **MVC-подобной** схеме (не строгий фреймворк MVC, а разделение ответственности):
+
+| Слой | Где в коде | Что делает |
+|------|------------|------------|
+| **Представление** | `src/gui/` | Окна, кнопки, таблица, диалоги — всё, что видит пользователь |
+| **Логика приложения** | `src/core/` | Шифрование, буфер, аудит, импорт/экспорт, события, настройки |
+| **Данные** | `src/database/`, `vault.db`, `config.db` | Хранение записей, журнала и конфигурации |
+
+**Поток:** действие в интерфейсе → вызов модуля в `core/` → чтение/запись в SQLite → обновление экрана.
+
+Ниже — **блок-схема в формате Mermaid**. На GitHub и в VS Code она рисуется автоматически; если среда не поддерживает Mermaid, виден только текст блока ` ```mermaid ` — это нормально, не ошибка README.
 
 ```mermaid
 flowchart LR
-    User((Пользователь)) --> GUI[gui/]
-    GUI --> Core[core/]
-    Core --> DB[(database/)]
-    Core --> Config[(config)]
-    DB --> Core
-    Config --> Core
-    Core --> GUI
+    U((Пользователь)) --> GUI["Интерфейс<br/>gui/"]
+    GUI --> CORE["Логика<br/>core/"]
+    CORE --> VDB[("Хранилище<br/>vault.db")]
+    CORE --> CDB[("Настройки<br/>config.db")]
+    VDB --> CORE
+    CDB --> CORE
+    CORE --> GUI
 ```
+
+Подробные диаграммы (слои, разблокировка, крипто) — в [docs/technical.md](docs/technical.md).
 
 ---
 
@@ -122,316 +266,33 @@ crypto/
 └── README.md
 ```
 
-В конфиге (отдельная БД) хранятся: путь к основной БД, хеш мастер-пароля, соль для шифрования записей, таймаут буфера, авто-блокировка, тема, язык.
+В `config.db` хранятся путь к `vault.db`, хеш мастер-пароля, соль шифрования, таймаут буфера, автоблокировка, тема и язык.
 
 ---
 
-## Безопасность
+## Разработка и тесты
 
-- Секреты не в коде: соль и параметры из конфига или переменной окружения `CRYPTO_VAULT_SALT`.
-- Ввод проверяется и обрезается по длине, управляющие символы удаляются.
-- В GUI при ошибках показывается общее сообщение, без деталей реализации.
-- Доступ к файлам только к необходимым (конфиг, хранилище).
-
----
-
-## Сборка
-
-- Зависимости: `requirements.txt` (pytest, cryptography, PyQt6, pyinstaller, …).
-- Запуск из исходников: `python run.py`
-- Исполняемый файл (PyInstaller): `python scripts/build_executable.py` → `dist/CryptoSafeManager/`
-- Отчёт тестов: `python scripts/generate_test_report.py` → `tests/report/`
+- Секреты не зашиты в код: соль из конфига или `CRYPTO_VAULT_SALT`.
+- Ввод валидируется; в GUI — сообщения без внутренних деталей.
+- Линтер: `ruff check src/`
+- Тесты по умолчанию: `pytest` (без `perf` и `slow`; см. `pytest.ini`)
+- Отчёт покрытия: `python scripts/generate_test_report.py` → `tests/report/index.html`
+- Полный прогон: `pytest --override-ini="addopts=-q --strict-markers"`
+- CI: GitHub Actions (Linux)
 
 ---
 
-## Требования
-
-- Python 3.8+
-
----
-
-## Установка и запуск
-
-На всех ОС одна схема: **`git clone` → `setup_*` (один раз) → `run_*` (GUI)**.
-
-### Windows (после `git clone` с GitHub)
-
-```powershell
-git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
-cd cryptosafe-manager
-.\scripts\setup_windows.ps1    # venv + pip (один раз)
-.\scripts\run_windows.ps1        # GUI
-```
-
-### Linux (после `git clone` с GitHub)
-
-```bash
-git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
-cd cryptosafe-manager
-chmod +x scripts/setup_linux.sh scripts/run_linux.sh
-bash scripts/setup_linux.sh    # venv + pip (один раз)
-bash scripts/run_linux.sh      # GUI
-```
-
-На Ubuntu/Debian, если PyQt6 не стартует, скрипт `setup_linux.sh` подскажет пакеты `apt` для libxcb/EGL.
-
-Переменные для удалённого X11 (по необходимости): `export DISPLAY=:0`
-
-### macOS (после `git clone` с GitHub)
-
-```bash
-git clone https://github.com/lonelywarsaw/cryptosafe-manager.git
-cd cryptosafe-manager
-chmod +x scripts/setup_macos.sh scripts/run_macos.sh
-bash scripts/setup_macos.sh    # venv + pip (один раз)
-bash scripts/run_macos.sh      # GUI
-```
-
-### Установка на компьютер без Python (.exe / пакет)
-
-После `setup_*` на **той же ОС**, где собираете:
-
-| ОС | Сборка | Запуск у пользователя |
-|----|--------|------------------------|
-| Windows | `.\scripts\build_windows.ps1` | `dist\CryptoSafeManager\CryptoSafeManager.exe` |
-| Linux | `bash scripts/build_linux.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
-| macOS | `bash scripts/build_macos.sh` | `dist/CryptoSafeManager/CryptoSafeManager` |
-
-Скопируйте на целевой ПК **всю папку** `dist/CryptoSafeManager/`. **.exe** делается PyInstaller на Windows, не Docker.
-
-### Тесты и отчёты
-
-- `pytest tests/ -q --ignore=tests/test_integration.py`
-- `python scripts/generate_test_report.py`
-- `ruff check src/`
-
-**CI:** GitHub Actions — workflow `Linux` (тесты + проверка PyQt6 на Ubuntu).
-
----
-
-## Спринты
-
-Ниже перечислены спринты и планируемые в них реализации. Ссылки ведут к соответствующим подразделам.
-
-| Спринт | Содержание |
-|--------|------------|
-| [Спринт 1](#спринт-1) | Основа: конфиг, БД, шифрование-placeholder, ключи-заглушки, события, аудит, состояние, базовый GUI |
-| [Спринт 2](#спринт-2) | Реальный вывод ключа из пароля (PBKDF2 и т.п.), store_key/load_key |
-| [Спринт 3](#спринт-3) | Замена XOR на AES-GCM в crypto |
-| [Спринт 4](#спринт-4) | Secure Clipboard: авто-очистка, мониторинг, защита буфера |
-| [Спринт 5](#спринт-5) | Журнал аудита с целостностью, просмотр и экспорт |
-| [Спринт 6](#спринт-6) | Импорт/экспорт, шаринг, QR-обмен ключами |
-| [Спринт 7](#спринт-7) | Дополнительные настройки и доработки |
-| [Спринт 8](#спринт-8) | Резервное копирование и восстановление, Dockerfile/скрипт сборки |
-
----
-
-### Отчёты по спринтам (что сделано)
-
-Подробные отчёты с привязкой к пунктам TRD лежат в `docs/sprint_reports/`:
-
-- `docs/sprint_reports/sprint1.md`
-- `docs/sprint_reports/sprint2.md`
-- `docs/sprint_reports/sprint3.md`
-- `docs/sprint_reports/sprint4.md`
-- `docs/sprint_reports/sprint5.md`
-- `docs/sprint_reports/sprint6.md`
-- `docs/sprint_reports/sprint7.md`
-- `docs/sprint_reports/sprint8.md`
-
-### Спринт 1
-
-**Реализовано:** фундамент проекта — модульная архитектура, конфигурация, база данных, событийная система и базовый GUI.
-
-**Модули и файлы:**
-
-| Файл / Каталог                    | Роль |
-|----------------------------------|------|
-| core/config.py                 | Работа с настройками (отдельная БД config.db) |
-| core/events.py                 | Событийная шина (Observer pattern + async) |
-| core/state_manager.py          | Управление состоянием сессии и таймерами неактивности |
-| core/input_validation.py       | Валидация и санитизация пользовательского ввода |
-| core/crypto/                   | Placeholder-шифрование (XOR) + secure wipe |
-| database/db.py + models.py   | Инициализация SQLite, создание таблиц, миграции |
-| gui/main_window.py             | Главное окно приложения |
-| gui/setup_wizard.py            | Мастер первого запуска |
-| gui/unlock_dialog.py           | Диалог ввода мастер-пароля |
-| gui/theme.py, strings.py     | Темизация и строки интерфейса |
-
-**Ключевые возможности:**
-- Полноценная событийная архитектура
-- Отдельная конфигурационная база данных
-- Инициализация и миграция основной БД
-- Базовый GUI + мастер первого запуска
-- Placeholder криптография с безопасным очищением памяти
-
-**Тесты:** tests/test_config.py, test_database.py, test_events.py, test_crypto.py
-
----
-
-### Спринт 2
-
-**Реализовано:** безопасная обработка мастер-пароля, качественное выведение ключа и авторизация.
-
-**Модули и файлы:**
-
-| Файл / Каталог                        | Роль |
-|--------------------------------------|------|
-| core/key_manager.py                | Управление ключами (derive, store, load) |
-| core/crypto/key_derivation.py      | Вывод ключа из мастер-пароля (Argon2id) |
-| core/authentication.py             | Авторизация, проверка мастер-пароля |
-| core/crypto/                       | Улучшенное шифрование (переход от placeholder) |
-| database/db.py                     | Таблица key_store для хранения производных ключей |
-| gui/unlock_dialog.py               | Диалог разблокировки + обработка ошибок |
-
-**Ключевые возможности:**
-- Хеширование мастер-пароля через Argon2id
-- Сравнение хэшей в постоянное время (secrets.compare_digest)
-- Валидация силы мастер-пароля
-- Безопасное хранение и загрузка главного ключа
-- Функция смены мастер-пароля
-- Улучшенная обработка ошибок авторизации
-
-**Тесты:** tests/test_sprint2_auth.py, tests/test_key_derivation.py
-
----
-
-### Спринт 3
-
-**Реализовано:** полноценное хранилище записей с шифрованием на уровне каждой записи, генератор паролей и обновлённый интерфейс списка.
-
-**Ядро (`src/core/vault/`):**
-
-| Модуль | Назначение |
-|--------|------------|
-| `encryption_service.py` | AES-256-GCM: nonce 12 байт, BLOB `nonce \|\| ciphertext \|\| tag`, payload — JSON полей записи |
-| `entry_manager.py` | CRUD: `create_entry`, `get_entry`, `get_all_entries`, `update_entry`, `delete_entry` |
-| `password_generator.py` | Случайные пароли: длина, наборы символов, исключение похожих знаков |
-
-- Ключ шифрования берётся из `KeyManager` (PBKDF2 после разблокировки); в `vault_entries` лежит только `encrypted_data`.
-- События: `EntryCreated`, `EntryUpdated`, `EntryDeleted` и совместимое `EntryAdded` для аудита и тестов.
-- В списке записей пароль не держится постоянно в памяти — подгружается при редактировании и копировании.
-
-**GUI:**
-
-- `SecureTable`: сортировка по названию, маска логина (`••••` после 4 символов), домен из URL, дата изменения, колонка пароля с показом по строке.
-- Глобальный «Показать пароли» и `Ctrl+Shift+P`, контекстное меню, множественный выбор.
-- `EntryDialog`: индикатор силы пароля, «Сгенерировать пароль» с настройками, проверка URL, favicon (best-effort).
-- Поиск в реальном времени: подстрока и фильтры `title:`, `username:`, `url:`, `notes:`.
-
-**База данных:** индексы по `created_at`, `updated_at`, `tags`; пул соединений в `db.py` для отзывчивого GUI.
-
-**Тесты:** `tests/test_sprint3_vault.py`, `tests/test_sprint3_perf.py` — round-trip AES-GCM, CRUD, уникальность 10 000 сгенерированных паролей.
-
----
-
-### Спринт 4
-
-**Реализовано:** безопасный буфер обмена с авто-очисткой, мониторингом и интеграцией в главное окно.
-
-**Модули (`src/core/clipboard/`):**
-
-| Файл | Роль |
-|------|------|
-| `clipboard_service.py` | Копирование, один таймер через `StateManager`, события `ClipboardCopied` / `ClipboardCleared` |
-| `platform_adapter.py` | Windows: `win32clipboard` + Qt; ленивый импорт PyQt6 (CI без libEGL) |
-| `clipboard_monitor.py` | Наблюдатель: внешняя подмена буфера → ускоренная очистка в приложении |
-| `secure_buffer.py` | Вспомогательные буферы для кратковременного хранения копируемого текста |
-
-**Поведение:**
-
-- Таймаут очистки из настроек; сброс при блокировке, выходе и явной команде «Очистить буфер».
-- В статус-баре: «Буфер: N с» и предупреждение за 5 секунд до очистки.
-- Копирование логина, пароля и «Копировать всё» из таблицы и контекстного меню.
-- Очистка буфера ОС с GUI-потока (`QTimer.singleShot`), без вызовов Qt из фоновых потоков.
-
-**Настройки:** уведомления буфера, уровень безопасности (basic / advanced / paranoid), whitelist приложений.
-
-**Тесты:** `tests/test_sprint4_clipboard.py` — таймер, очистка, события, GUI smoke (где доступен дисплей).
-
----
-
-### Спринт 5
-
-**Реализовано**: полноценный журнал аудита с криптографической защитой целостности, просмотр, фильтры и базовый экспорт.
-
-**Модули (src/core/audit/):**
-
-| Файл                    | Роль |
-|-------------------------|------|
-| audit_logger.py       | Центральный сервис логирования, подписка на события |
-| log_signer.py         | Создание цифровых подписей (HMAC-SHA256 + hash chain) |
-| log_verifier.py       | Проверка целостности логов, hash chain, обнаружение tampering |
-| integrity.py          | Проверка при старте приложения и по запросу пользователя |
-| view_windows.py       | GUI-окно журнала аудита |
-
-**Поведение:**
-
-- Логируются ключевые события: вход/выход, CRUD, буфер, импорт/экспорт, паника, профили.
-- Чувствительные данные — `[REDACTED]`; цепочка `previous_hash` + HMAC подпись.
-- Проверка целостности при старте; GUI: фильтры, экспорт JSON/CSV.
-
-**Тесты:** `tests/test_sprint5_audit_validation.py`, `tests/test_sprint5_audit_perf.py`
----
-
-### Спринт 6
-
-**Реализовано:** импорт/экспорт, шаринг, QR/key exchange, GUI, таблицы БД, тесты TEST/PERF.
-
-**Каталог `src/core/import_export/`:**
-
-| Компонент | TRD | Содержание |
-|-----------|-----|------------|
-| `exporter.py` | EXP | Encrypted JSON, CSV, Bitwarden/LastPass (plain и encrypted), RSA-обёртка data_key |
-| `importer.py` | IMP | merge / replace / dry-run; лимит 10 MB и таймаут 30 с; санитизация |
-| `sharing_service.py` | SHR | Share по паролю или RSA-OAEP; срок 1–30 дней; read_only / editable |
-| `key_exchange.py` | QR-3 | RSA-2048, ECC P-256, fingerprint, контакты в config |
-| `qr_codec.py` | QR-1–2 | checksum, chunking, PNG (`qrcode`, опционально) |
-| `formats/` | EXP/IMP | json, csv, bitwarden, lastpass |
-
-**GUI:** `src/gui/import_export_dialogs.py` — экспорт, импорт, share, QR viewer; пункты меню в `main_window.py`.
-
-**БД (SCHEMA_VERSION 5):** `shared_entries`, `import_export_history`; миграция в `db.py`.
-
-- Мастер-пароль обязателен при экспорте/импорте Encrypted JSON.
-- События `VaultExported`, `VaultImported`, `EntryShared` → аудит (спринт 5).
-
-**Тесты:** `tests/test_sprint6_import_export.py` (TEST-1..5), `tests/test_sprint6_perf.py` (PERF-1..4).
-
-**Планируется:** QR-сканер с камеры, сетевые share-link.
-
----
-
-### Спринт 7
-
-**Реализовано:** усиление безопасности, авто-блокировка, трей, режим паники, профили.
-
-| Модуль | Назначение |
-|--------|------------|
-| `core/security/side_channel_protection.py` | Сравнение в постоянное время |
-| `core/security/memory_guard.py` | Secure wipe, SecretBuffer |
-| `core/security/activity_monitor.py` | Idle + Windows GetLastInputInfo |
-| `core/security/panic_mode.py` | Экстренная блокировка |
-| `core/security/security_profiles.py` | Standard / Enhanced / Paranoid |
-| `gui/tray_icon.py` | Системный трей |
-
-- Горячая клавиша паники: `Ctrl+Shift+Esc`; сворачивание в трей.
-- События: `VaultLocked`, `PanicModeActivated`, `SecurityProfileChanged`.
-
-**Тесты:** `tests/test_sprint7_security.py`, `tests/test_sprint7_perf.py`
-
----
-
-### Спринт 8
-
-**Реализовано:** финальная интеграция, backup, упаковка, документация.
-
-| Артефакт | Назначение |
-|----------|------------|
-| `core/backup_service.py` | Архив `.csafe.zip` + manifest SHA-256 |
-| `run.py` | Запуск из корня репозитория |
-| `cryptosafe.spec` + `scripts/build_executable.py` | PyInstaller |
-| `scripts/generate_test_report.py` | junit + coverage в `tests/report/` |
-| `docs/user_guide.md`, `docs/technical.md` | Руководство и архитектура |
-
-**Тесты:** `tests/test_sprint8_backup.py` + полный набор `tests/test_sprint*.py`
+## Спринты (TRD)
+
+История разработки по этапам. **Спецификации требований** — в каталоге [sprints/](sprints/), не в README.
+
+| Спринт | Файл TRD | Тема |
+|--------|----------|------|
+| 1 | [sprints/sprint1.md](sprints/sprint1.md) | Конфиг, БД, события, базовый GUI |
+| 2 | [sprints/sprint2.md](sprints/sprint2.md) | Мастер-пароль, Argon2, ключи |
+| 3 | [sprints/sprint3.md](sprints/sprint3.md) | Vault, AES-GCM, таблица записей |
+| 4 | [sprints/sprint4.md](sprints/sprint4.md) | Защищённый буфер обмена |
+| 5 | [sprints/sprint5.md](sprints/sprint5.md) | Журнал аудита, целостность |
+| 6 | [sprints/sprint6.md](sprints/sprint6.md) | Импорт/экспорт, шаринг, QR |
+| 7 | [sprints/sprint7.md](sprints/sprint7.md) | Профили, трей, паника, UX |
+| 8 | [sprints/sprint8.md](sprints/sprint8.md) | Backup, сборка, документация |

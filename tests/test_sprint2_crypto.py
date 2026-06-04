@@ -1,5 +1,7 @@
 # тесты спринта 2: argon2, вывод ключа, постоянное время, обнуление памяти
 
+import pytest
+
 import unittest
 import secrets
 from core.crypto.key_derivation import (
@@ -32,6 +34,7 @@ class TestArgon2Params(unittest.TestCase):
 
 class TestKeyDerivationConsistency(unittest.TestCase):
     # TEST-2 спринт 2: один и тот же пароль и соль 100 раз — один и тот же ключ
+    @pytest.mark.slow
     def test_pbkdf2_same_input_same_output(self):
         pwd = "secret"
         salt = b"1234567890123456"

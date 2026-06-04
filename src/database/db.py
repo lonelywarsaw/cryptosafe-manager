@@ -1,4 +1,4 @@
-# vault db: записи хранилища (пароли и поля приходят уже зашифрованными, шифрование в core/vault)
+"""Vault database API: encrypted entries, audit log, keys. / API БД хранилища: записи, аудит, ключи."""
 
 import os
 import sqlite3
@@ -38,13 +38,19 @@ def _ensure_parent_dir(file_path):
 
 
 def set_db_path(path):
-    # задаётся путь к vault.db (при открытии или создании хранилища)
+    """Set path to vault.db. / Задаёт путь к vault.db."""
     global _db_path, _pool_total, _pool_path
     with _lock:
         _db_path = _normalize_db_path(path)
         # пул пересоздаётся при смене пути к БД (тесты используют разные временные файлы)
         _pool_total = 0
         _pool_path = None
+        try:
+            from core.audit.audit_logger import clear_chain_cache
+
+            clear_chain_cache()
+        except Exception:
+            pass
         # очистка очереди доступных коннектов
         try:
             while True:
@@ -65,9 +71,46 @@ def _path():
     return os.path.join(base, "vault.db")
 
 
+def get_vault_path() -> str:
+    """Absolute path to the active vault.db file. / Абсолютный путь к vault.db."""
+    return _normalize_db_path(_path()) or _path()
+
+
+def close_all_connections() -> None:
+    """Close pooled SQLite connections (e.g. before restore). / Закрывает пул соединений."""
+    global _pool_total, _pool_path
+    with _pool_lock:
+        while True:
+            try:
+                conn = _pool_queue.get_nowait()
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            except queue.Empty:
+                break
+        _pool_total = 0
+        _pool_path = None
+
+
+def backup_vault_to(dest_path: str) -> None:
+    """Copy vault.db via SQLite backup API (safe while the app is running). / Копия vault через backup API."""
+    _ensure_parent_dir(dest_path)
+
+    def apply(src_conn):
+        dest_conn = sqlite3.connect(dest_path)
+        try:
+            src_conn.backup(dest_conn)
+            dest_conn.commit()
+        finally:
+            dest_conn.close()
+
+    _with_connection(apply)
+
+
 def get_connection():
-    # открывается соединение с sqlite; после использования его нужно закрыть
-    path = _normalize_db_path(_path()) or _path()
+    """Open a SQLite connection (caller must close). / Открывает соединение с SQLite."""
+    path = get_vault_path()
     _ensure_parent_dir(path)
     return sqlite3.connect(path)
 
@@ -180,7 +223,7 @@ def _ensure_sprint6_tables(cur):
 
 
 def init_db():
-    # таблицы создаются, если их ещё нет; user_version хранит версию схемы для миграций (спринт 2: миграция key_store)
+    """Create tables and run schema migrations. / Создаёт таблицы и выполняет миграции схемы."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("PRAGMA user_version")
@@ -272,7 +315,7 @@ def _timestamp():
 
 
 def insert_vault_entry(encrypted_data, tags=None):
-    # в хранилище добавляется одна запись; encrypted_data уже зашифрован (nonce||ciphertext||tag)
+    """Insert one encrypted vault row; returns new id. / Добавляет зашифрованную запись."""
     def apply(conn):
         cur = conn.cursor()
         now = _timestamp()
@@ -289,7 +332,7 @@ def insert_vault_entry(encrypted_data, tags=None):
 
 
 def get_all_vault_entries():
-    # возвращаются все записи хранилища (id, encrypted_data, created_at, updated_at, tags)
+    """Return all vault rows ordered by id. / Возвращает все записи хранилища."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -301,7 +344,7 @@ def get_all_vault_entries():
 
 
 def get_vault_entry(entry_id):
-    # возвращается одна запись по id или None
+    """Return one vault row by id or None. / Возвращает запись по id или None."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -314,7 +357,7 @@ def get_vault_entry(entry_id):
 
 
 def update_vault_entry(entry_id, encrypted_data, tags=None):
-    # запись с указанным id обновляется; encrypted_data передаётся уже зашифрованным
+    """Update encrypted vault row by id. / Обновляет зашифрованную запись по id."""
     def apply(conn):
         cur = conn.cursor()
         now = _timestamp()
@@ -328,7 +371,7 @@ def update_vault_entry(entry_id, encrypted_data, tags=None):
 
 
 def delete_vault_entry(entry_id):
-    # запись с указанным id удаляется из хранилища
+    """Delete vault row by id. / Удаляет запись хранилища по id."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("DELETE FROM vault_entries WHERE id=?", (entry_id,))
@@ -338,7 +381,7 @@ def delete_vault_entry(entry_id):
 
 
 def get_audit_tail():
-    # последняя строка audit_log для цепочки подписи (спринт 5)
+    """Return last audit_log row for signature chain. / Последняя строка журнала аудита."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -361,6 +404,7 @@ def get_audit_tail():
 
 
 def list_audit_logs(limit: int = 500, offset: int = 0, event_type: Optional[str] = None):
+    """List audit log entries (newest first). / Список записей журнала аудита."""
     def apply(conn):
         cur = conn.cursor()
         if event_type:
@@ -399,7 +443,48 @@ def list_audit_logs(limit: int = 500, offset: int = 0, event_type: Optional[str]
     return _with_connection(apply)
 
 
+def list_audit_logs_chronological(limit: int = 500, offset: int = 0, event_type: Optional[str] = None):
+    """List audit log entries oldest first (for chain verification). / Журнал аудита от старых к новым."""
+    def apply(conn):
+        cur = conn.cursor()
+        if event_type:
+            cur.execute(
+                """SELECT id, action, timestamp, entry_id, details, signature,
+                          sequence_number, previous_hash, entry_data
+                   FROM audit_log WHERE action = ?
+                   ORDER BY COALESCE(sequence_number, id) ASC LIMIT ? OFFSET ?""",
+                (event_type, limit, offset),
+            )
+        else:
+            cur.execute(
+                """SELECT id, action, timestamp, entry_id, details, signature,
+                          sequence_number, previous_hash, entry_data
+                   FROM audit_log ORDER BY COALESCE(sequence_number, id) ASC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "id": r[0],
+                    "action": r[1],
+                    "timestamp": r[2],
+                    "entry_id": r[3],
+                    "details": r[4],
+                    "signature": r[5],
+                    "sequence_number": r[6],
+                    "previous_hash": r[7],
+                    "entry_data": r[8],
+                }
+            )
+        return out
+
+    return _with_connection(apply)
+
+
 def count_audit_logs():
+    """Return total number of audit log rows. / Число записей в журнале аудита."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM audit_log")
@@ -409,6 +494,7 @@ def count_audit_logs():
 
 
 def prune_audit_logs(max_entries: int):
+    """Trim audit log to max_entries; returns rows removed. / Обрезает журнал до лимита."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM audit_log")
@@ -437,8 +523,10 @@ def insert_audit_log(
     signature=None,
     public_key=None,
     sequence_number=None,
+    *,
+    prune_max_entries: Optional[int] = None,
 ):
-    # в журнал аудита добавляется строка; спринт 5 — sequence_number, previous_hash, entry_data, подпись
+    """Append signed row to audit log. / Добавляет строку в журнал аудита."""
     seq_arg = sequence_number
 
     def apply(conn):
@@ -465,6 +553,17 @@ def insert_audit_log(
                 public_key,
             ),
         )
+        if prune_max_entries is not None and prune_max_entries > 0:
+            cur.execute("SELECT COUNT(*) FROM audit_log")
+            total = int(cur.fetchone()[0])
+            if total > prune_max_entries:
+                to_remove = total - prune_max_entries
+                cur.execute(
+                    """DELETE FROM audit_log WHERE id IN (
+                        SELECT id FROM audit_log ORDER BY id ASC LIMIT ?
+                    )""",
+                    (to_remove,),
+                )
         conn.commit()
 
     _with_connection(apply)
@@ -478,6 +577,7 @@ def insert_shared_entry(
     permissions: str,
     expires_at: Optional[str] = None,
 ):
+    """Insert or replace shared entry metadata. / Сохраняет метаданные общей записи."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -500,6 +600,7 @@ def insert_shared_entry(
 
 
 def list_shared_entries(limit: int = 200):
+    """List shared entry records. / Список общих записей."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -535,6 +636,7 @@ def insert_import_export_history(
     checksum: str,
     verification_status: str,
 ):
+    """Record import/export operation in history. / Записывает операцию импорта/экспорта."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -558,6 +660,7 @@ def insert_import_export_history(
 
 
 def list_import_export_history(limit: int = 200):
+    """List import/export history rows. / История операций импорта/экспорта."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute(
@@ -586,19 +689,21 @@ def list_import_export_history(limit: int = 200):
 
 
 def backup(dest_path: str, *, include_config: bool = True):
+    """Create backup archive at dest_path. / Создаёт резервную копию."""
     from core.backup_service import create_backup
 
     return create_backup(dest_path, include_config=include_config)
 
 
 def restore(path: str, *, restore_config: bool = False):
+    """Restore vault from backup archive. / Восстанавливает хранилище из копии."""
     from core.backup_service import restore_backup
 
     return restore_backup(path, restore_config=restore_config)
 
 
 def get_key_store(key_type):
-    # чтение из key_store по key_type (auth_hash или enc_salt), возвращаются байты key_data или None (спринт 2)
+    """Read key_data blob by key_type or None. / Читает ключ из key_store."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("SELECT key_data FROM key_store WHERE key_type = ? ORDER BY id DESC LIMIT 1", (key_type,))
@@ -609,7 +714,7 @@ def get_key_store(key_type):
 
 
 def set_key_store(key_type, key_data, version=1):
-    # запись в key_store (key_type, key_data blob, version); для смены пароля перезаписываем по key_type (спринт 2)
+    """Replace key_store row for key_type. / Записывает ключ в key_store."""
     def apply(conn):
         cur = conn.cursor()
         cur.execute("DELETE FROM key_store WHERE key_type = ?", (key_type,))

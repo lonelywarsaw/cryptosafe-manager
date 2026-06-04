@@ -1,4 +1,4 @@
-# Окно, чтобы добавить или изменить запись (название, логин, пароль, URL, заметки).
+"""Entry create/edit dialog with validation and password generator. / Диалог создания/редактирования записи с валидацией и генератором."""
 
 import sys
 import os
@@ -37,6 +37,8 @@ from .widgets.password_entry import PasswordEntry
 
 
 class EntryDialog(QDialog):
+    """Form dialog for adding or editing a vault entry. / Форма добавления или редактирования записи хранилища."""
+
     def __init__(
         self,
         parent=None,
@@ -48,6 +50,7 @@ class EntryDialog(QDialog):
         category="",
         is_edit=False,
     ):
+        """Builds fields, strength meter, and password generator hook. / Создаёт поля, индикатор надёжности и генератор пароля."""
         super().__init__(parent)
         self._is_edit = is_edit
         self._password_generated = False  # (DIALOG-2) если сгенерирован — strength можно не проверять
@@ -304,6 +307,7 @@ class EntryDialog(QDialog):
         dlg.exec()
 
     def get_data(self):
+        """Returns sanitized entry fields after dialog acceptance. / Возвращает очищенные поля записи после подтверждения."""
         title_sanitized, _ = validate_title(self._title.text())
 
         # URL: здесь берём уже валидированное в _on_ok, но если пользователь закрыл без on_ok — санитизируем всё равно

@@ -1,4 +1,4 @@
-# контроллер аудита: события → структурированная запись + цепочка + подпись (спринт 5, ARC/LOG)
+"""Контроллер аудита: подписка на события, цепочка хешей, HMAC-подпись."""
 
 import hashlib
 import json
@@ -6,7 +6,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-from core import events
+from core import config, events
 from core.key_manager import get_encryption_key
 from database import db
 
@@ -52,6 +52,47 @@ def _build_payload(
     return json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
 
 
+_tls = threading.local()
+
+
+def _get_signer() -> AuditLogSigner:
+    signer = getattr(_tls, "signer", None)
+    if signer is not None:
+        return signer
+    ek = get_encryption_key()
+    sk = derive_audit_signing_key(ek)
+    signer = AuditLogSigner(sk if sk else b"__no_session_audit_hmac_dev_only__")
+    _tls.signer = signer
+    return signer
+
+
+def clear_chain_cache() -> None:
+    """Drop cached chain tip and signer so the next log reads the DB tail."""
+    _tls.chain_tip = None
+    if hasattr(_tls, "signer"):
+        delattr(_tls, "signer")
+
+
+def _resolve_chain_tip() -> tuple[str, int]:
+    from .integrity import entry_hash_for_chain
+
+    tip = getattr(_tls, "chain_tip", None)
+    if tip is not None:
+        return tip["prev_hash"], int(tip["seq"]) + 1
+
+    prev_row = db.get_audit_tail()
+    if prev_row and prev_row.get("entry_data"):
+        ed = prev_row["entry_data"]
+        if not isinstance(ed, bytes):
+            ed = b""
+        prev_hash = entry_hash_for_chain(ed, str(prev_row.get("signature") or ""))
+        seq = int(prev_row.get("sequence_number") or prev_row.get("id") or 0) + 1
+    else:
+        prev_hash = "0" * 64
+        seq = 1
+    return prev_hash, seq
+
+
 def _schedule_log(event_type: str, entry_id=None, details=None) -> None:
     # PERF-5: некритичные события пишутся в фоне, publish/sync не блокируется
     threading.Thread(
@@ -64,26 +105,15 @@ def _schedule_log(event_type: str, entry_id=None, details=None) -> None:
 
 def _log_event(event_type: str, entry_id=None, details=None):
     try:
-        ek = get_encryption_key()
-        sk = derive_audit_signing_key(ek)
-        signer = AuditLogSigner(sk if sk else b"__no_session_audit_hmac_dev_only__")
+        from .integrity import AUDIT_MAX_ENTRIES, entry_hash_for_chain, maybe_prune_audit_log
 
-        from .integrity import entry_hash_for_chain
-
-        prev_row = db.get_audit_tail()
-        if prev_row and prev_row.get("entry_data"):
-            prev_hash = entry_hash_for_chain(
-                prev_row["entry_data"] if isinstance(prev_row["entry_data"], bytes) else b"",
-                str(prev_row.get("signature") or ""),
-            )
-            seq = int(prev_row.get("sequence_number") or prev_row.get("id") or 0) + 1
-        else:
-            prev_hash = "0" * 64
-            seq = 1
+        signer = _get_signer()
+        prev_hash, seq = _resolve_chain_tip()
 
         payload = _build_payload(event_type, entry_id, details, prev_hash, seq)
         signature = signer.sign(prev_hash.encode("utf-8") + b"|" + payload)
 
+        max_entries = int(config.get(AUDIT_MAX_ENTRIES, "10000") or "10000")
         db.insert_audit_log(
             event_type,
             entry_id,
@@ -92,12 +122,20 @@ def _log_event(event_type: str, entry_id=None, details=None):
             entry_data=payload,
             signature=signature,
             sequence_number=seq,
+            prune_max_entries=max_entries if seq >= max_entries else None,
         )
+
+        _tls.chain_tip = {
+            "prev_hash": entry_hash_for_chain(payload, signature),
+            "seq": seq,
+        }
+        maybe_prune_audit_log(current_sequence=seq)
     except Exception:
-        pass
+        clear_chain_cache()
 
 
 def register():
+    """Подписывает обработчики core.events на запись в журнал аудита."""
     def _sub(event_type: str, builder: Callable[..., str], *, async_log: bool = False):
         def handler(**kw):
             details = builder(kw)

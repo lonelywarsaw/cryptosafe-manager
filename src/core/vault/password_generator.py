@@ -1,3 +1,5 @@
+"""Генератор паролей на secrets: наборы символов, исключение неоднозначных."""
+
 import secrets
 import string
 from dataclasses import dataclass
@@ -17,6 +19,8 @@ SYMBOLS = "!@#$%^&*"
 
 @dataclass(frozen=True)
 class PasswordGenConfig:
+    """Параметры генерации: длина 8–64 и включённые наборы символов."""
+
     length: int = 16
     use_upper: bool = True
     use_lower: bool = True
@@ -26,6 +30,8 @@ class PasswordGenConfig:
 
 
 class PasswordGenerator:
+    """Криптостойкая генерация паролей с гарантией символа из каждого набора."""
+
     def __init__(self):
         pass
 
@@ -47,7 +53,11 @@ class PasswordGenerator:
         }
 
     def generate(self, cfg: PasswordGenConfig = PasswordGenConfig()) -> str:
-        # длина (спринт3 GEN-2)
+        """Генерирует пароль по cfg (длина 8–64, Fisher–Yates перемешивание).
+
+        Returns:
+            Строка пароля.
+        """
         length = int(cfg.length)
         if length < 8:
             length = 8
